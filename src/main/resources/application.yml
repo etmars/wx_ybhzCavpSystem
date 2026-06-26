@@ -1,0 +1,27 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: wx-ybhz-cavp-system
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
+
+app:
+  data-dir: ${DATA_DIR:./data}
+  osmandroid-assets: ${OSMANDROID_ASSETS:F:/osmandroid/OsmAndroidDemo/app/build/generated/assets/osm}
+  parking:
+    nearby-lng: 120.635716
+    nearby-lat: 31.422788
+    nearby-radius: 5000
+    default-parking-id: "000003"
+    vehicle-id: I1000110
+  navigation:
+    arrival-meters: 8.0
+    walk-speed-mps: 1.15
+
+logging:
+  level:
+    com.ybhzcavp: INFO
