@@ -8,6 +8,7 @@ target/
 .settings/
 # 证书与私钥，绝不提交
 cert/
+cert-tools/out/
 *.p12
 *.pem
 *.key
