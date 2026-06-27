@@ -189,7 +189,7 @@ def main():
     print("[4/6] 生成 CSR 并请求签发...")
     domain_key = ec.generate_private_key(ec.SECP256R1())
     csr = x509.CertificateSigningRequestBuilder().add_attribute(
-        x509.oid.NameOID.COMMON_NAME, DOMAIN
+        x509.oid.NameOID.COMMON_NAME, DOMAIN.encode("ascii")
     ).sign(domain_key, hashes.SHA256())
     der = csr.public_bytes(serialization.Encoding.DER)
     order = acme.get(order_url)
@@ -219,11 +219,18 @@ def main():
         f.write(privkey_pem)
 
     cert_obj = x509.load_pem_x509_certificate(cert_pem.encode())
+    # 解析完整链，把中间证书也放进 p12
+    from cryptography.x509 import load_pem_x509_certificates
+    try:
+        all_certs = load_pem_x509_certificates(cert_pem.encode())
+    except Exception:
+        all_certs = [cert_obj]
+    cas = all_certs[1:] if len(all_certs) > 1 else None
     p12 = serialization.pkcs12.serialize_key_and_certificates(
         name=b"cavp",
         key=domain_key,
         cert=cert_obj,
-        cas=None,
+        cas=cas,
         encryption_algorithm=serialization.BestAvailableEncryption(KEYSTORE_PWD.encode()),
     )
     with open(os.path.join(OUT_DIR, "keystore.p12"), "wb") as f:
