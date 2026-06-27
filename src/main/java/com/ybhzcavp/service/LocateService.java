@@ -49,13 +49,11 @@ public class LocateService {
         return resp;
     }
 
-    public ObjectNode mapMeta(String mapId) {
+    public ObjectNode getMapSceneJson(String mapId) {
         MapDataService.MapEntry map = mapDataService.resolveMap(mapId);
-        ObjectNode node = mapDataService.getFloorGeometry(map != null ? map.id() : mapId).toGeoJson();
-        if (map != null) {
-            node.put("map_id", map.id());
-            node.put("map_name", map.name());
+        if (map == null) {
+            return OsmMapSceneParser.MapScene.empty().toJson();
         }
-        return node;
+        return mapDataService.getMapScene(map.id()).toJson();
     }
 }

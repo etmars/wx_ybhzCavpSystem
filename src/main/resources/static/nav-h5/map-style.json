@@ -1,0 +1,102 @@
+{
+  "version": 8,
+  "name": "parking-indoor",
+  "glyphs": "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
+  "sources": {
+    "parking-source": {
+      "type": "vector",
+      "tiles": [
+        "__TILES_URL__"
+      ],
+      "maxzoom": 22,
+      "minzoom": 14,
+      "promoteId": "id"
+    }
+  },
+  "layers": [
+    {
+      "id": "background",
+      "type": "background",
+      "paint": { "background-color": "#232A38" }
+    },
+    {
+      "id": "road-2005-fill",
+      "type": "fill",
+      "source": "parking-source",
+      "source-layer": "road_2005_union",
+      "paint": { "fill-color": "#1C242F", "fill-opacity": 1.0 }
+    },
+    {
+      "id": "room-2008-fill",
+      "type": "fill",
+      "source": "parking-source",
+      "source-layer": "room_2008",
+      "paint": { "fill-color": "#1C242F", "fill-opacity": 1.0 }
+    },
+    {
+      "id": "parking-fill",
+      "type": "fill",
+      "source": "parking-source",
+      "source-layer": "parking_fill",
+      "paint": { "fill-color": "#1C242F", "fill-opacity": 1.0 }
+    },
+    {
+      "id": "parking-edge",
+      "type": "line",
+      "source": "parking-source",
+      "source-layer": "parking_edge",
+      "paint": { "line-color": "#4F5965", "line-width": 2.2 }
+    },
+    {
+      "id": "road-2005-ramp-fill",
+      "type": "fill",
+      "source": "parking-source",
+      "source-layer": "road_2005_ramp",
+      "paint": { "fill-color": "#22C7A9", "fill-opacity": 0.95, "fill-antialias": false }
+    },
+    {
+      "id": "arrow-1001-fill",
+      "type": "fill",
+      "source": "parking-source",
+      "source-layer": "arrow_1001",
+      "paint": { "fill-color": "#D7E1F2", "fill-opacity": 0.95 }
+    },
+    {
+      "id": "blocker-100202-extrusion",
+      "type": "fill-extrusion",
+      "source": "parking-source",
+      "source-layer": "blocker_100202",
+      "paint": {
+        "fill-extrusion-color": "#A6B4CB",
+        "fill-extrusion-height": 0.22,
+        "fill-extrusion-base": 0,
+        "fill-extrusion-opacity": 0.95
+      }
+    },
+    {
+      "id": "blocker-100202-edge",
+      "type": "line",
+      "source": "parking-source",
+      "source-layer": "blocker_100202",
+      "paint": { "line-color": "#D6E0EF", "line-width": 1.6 }
+    },
+    {
+      "id": "wall-1000-extrusion",
+      "type": "fill-extrusion",
+      "source": "parking-source",
+      "source-layer": "walls_1000",
+      "paint": {
+        "fill-extrusion-color": "#8992A5",
+        "fill-extrusion-height": 3.2,
+        "fill-extrusion-base": 0,
+        "fill-extrusion-opacity": 0.95
+      }
+    }
+  ],
+  "light": {
+    "anchor": "viewport",
+    "color": "#DCE7FF",
+    "intensity": 0.55,
+    "position": [1.0, 52, 30]
+  }
+}

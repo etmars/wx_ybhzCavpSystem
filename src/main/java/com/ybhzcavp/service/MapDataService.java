@@ -37,6 +37,7 @@ public class MapDataService {
     private final Map<String, MapEntry> mapsById = new ConcurrentHashMap<>();
     private final Map<String, MapEntry> mapsByName = new ConcurrentHashMap<>();
     private final Map<String, KnnLocalizer> knnByMapId = new ConcurrentHashMap<>();
+    private final Map<String, OsmMapSceneParser.MapScene> sceneCache = new ConcurrentHashMap<>();
     private final Map<String, FloorGeometry> geometryCache = new ConcurrentHashMap<>();
 
     private Path dataRoot;
@@ -199,6 +200,17 @@ public class MapDataService {
         return Files.readAllBytes(path);
     }
 
+    public OsmMapSceneParser.MapScene getMapScene(String mapId) {
+        return sceneCache.computeIfAbsent(mapId, id -> {
+            MapEntry entry = mapsById.get(id);
+            if (entry == null || !Files.exists(entry.osmFile())) {
+                return OsmMapSceneParser.MapScene.empty();
+            }
+            return OsmMapSceneParser.parse(entry.osmFile());
+        });
+    }
+
+    /** @deprecated 使用 getMapScene */
     public FloorGeometry getFloorGeometry(String mapId) {
         return geometryCache.computeIfAbsent(mapId, id -> {
             MapEntry entry = mapsById.get(id);

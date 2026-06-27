@@ -1,0 +1,301 @@
+:root {
+  --hmi-background: #1B2329;
+  --hmi-surface: #24303A;
+  --hmi-surface-elevated: #2D3B47;
+  --hmi-secondary-bg: #0F1620;
+  --hmi-primary: #207FED;
+  --hmi-primary-dark: #1769C9;
+  --hmi-primary-light: #66A6FF;
+  --hmi-foreground: #F5F7F8;
+  --hmi-muted: #8B98A3;
+  --hmi-border: #41484E;
+  --hmi-success: #66BB6A;
+  --hmi-primary-12: rgba(32, 127, 237, 0.12);
+  --hmi-primary-20: rgba(32, 127, 237, 0.20);
+  --route-remaining: #3E86EC;
+  --route-traveled: rgba(62, 80, 96, 0.6);
+  --route-casing: #F7FBFF;
+  --map-bg: #232A38;
+
+  --radius-card: 24px;
+  --radius-panel: 28px;
+  --radius-sub: 18px;
+  --radius-tag: 12px;
+  --radius-btn: 16px;
+  --radius-pill: 999px;
+
+  --elev-1: 0 1px 2px rgba(0,0,0,0.20);
+  --elev-4: 0 4px 8px rgba(0,0,0,0.30);
+  --elev-6: 0 6px 12px rgba(0,0,0,0.40);
+  --elev-8: 0 8px 16px rgba(0,0,0,0.45);
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--map-bg);
+  color: var(--hmi-foreground);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-size: 14px;
+  user-select: none;
+}
+
+#map {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* ===== 顶栏 ===== */
+.toolbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  padding-top: env(safe-area-inset-top, 0px);
+  background: linear-gradient(180deg, rgba(36,48,58,0.96) 0%, rgba(36,48,58,0.80) 80%, rgba(36,48,58,0) 100%);
+  display: flex;
+  align-items: center;
+  height: calc(56px + env(safe-area-inset-top, 0px));
+}
+
+.toolbar-back {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 4px;
+}
+
+.toolbar-back img {
+  width: 24px;
+  height: 24px;
+  filter: brightness(0) invert(1);
+}
+
+.toolbar-title {
+  flex: 1;
+  text-align: center;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--hmi-foreground);
+  margin-right: 52px;
+}
+
+.toolbar-placeholder { width: 48px; }
+
+/* ===== 导航面板 ===== */
+.nav-panel {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  z-index: 15;
+  background: var(--hmi-surface);
+  border: 1px solid var(--hmi-border);
+  border-radius: var(--radius-panel);
+  padding: 16px 18px;
+  box-shadow: var(--elev-6);
+}
+
+.nav-spot-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--hmi-muted);
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+}
+
+.nav-row-main {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.nav-maneuver-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-tag);
+  background: var(--hmi-primary-12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.nav-maneuver-icon img {
+  width: 28px;
+  height: 28px;
+  filter: brightness(0) invert(1);
+}
+
+.nav-remain-large {
+  flex: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
+}
+
+.nav-remain-value {
+  font-size: 30px;
+  font-weight: 700;
+  color: var(--hmi-foreground);
+  line-height: 1.1;
+}
+
+.nav-remain-unit {
+  font-size: 14px;
+  color: var(--hmi-muted);
+}
+
+.nav-eta-hint {
+  font-size: 13px;
+  color: var(--hmi-muted);
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.nav-maneuver-text {
+  font-size: 14px;
+  color: var(--hmi-foreground);
+  margin-top: 8px;
+  opacity: 0.9;
+}
+
+.nav-progress {
+  margin-top: 12px;
+  height: 6px;
+  background: rgba(62, 80, 96, 0.4);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+
+.nav-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--hmi-primary) 0%, var(--hmi-primary-light) 100%);
+  border-radius: var(--radius-pill);
+  transition: width 0.3s ease-out;
+}
+
+.nav-eta-arrival {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--hmi-muted);
+}
+
+.nav-actions {
+  margin-top: 14px;
+  display: flex;
+}
+
+/* ===== 按钮 ===== */
+.btn-nav {
+  flex: 1;
+  height: 48px;
+  border: none;
+  border-radius: var(--radius-btn);
+  background: linear-gradient(135deg, var(--hmi-primary) 0%, var(--hmi-primary-dark) 100%);
+  color: var(--hmi-foreground);
+  font-size: 16px;
+  font-weight: 600;
+  box-shadow: 0 0 12px rgba(32,127,237,0.30), 0 0 24px rgba(32,127,237,0.12);
+  cursor: pointer;
+}
+
+.btn-nav.btn-stop {
+  background: transparent;
+  border: 1.5px solid var(--hmi-border);
+  color: var(--hmi-foreground);
+  box-shadow: none;
+}
+
+/* ===== FAB 回中 ===== */
+.fab-locate {
+  position: absolute;
+  right: 16px;
+  bottom: calc(200px + env(safe-area-inset-bottom, 0px));
+  z-index: 15;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 1px solid var(--hmi-border);
+  background: var(--hmi-surface-elevated);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--elev-4);
+  cursor: pointer;
+}
+
+.fab-locate img {
+  width: 24px;
+  height: 24px;
+}
+
+/* ===== 到达卡片 ===== */
+.arrival-mask {
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(2px);
+}
+
+.arrival-mask.visible { display: flex; }
+
+.arrival-card {
+  background: var(--hmi-surface);
+  border: 1px solid var(--hmi-border);
+  border-radius: var(--radius-sub);
+  padding: 28px 36px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  box-shadow: var(--elev-8);
+  max-width: 80%;
+}
+
+.arrival-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: rgba(102, 187, 106, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.arrival-icon img {
+  width: 36px;
+  height: 36px;
+}
+
+.arrival-text {
+  margin-top: 14px;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--hmi-foreground);
+  text-align: center;
+}
+
+.btn-arrival {
+  margin-top: 20px;
+  width: 160px;
+  flex: none;
+}
+
+/* ===== MapLibre 控件隐藏 ===== */
+.maplibregl-ctrl-bottom-left, .maplibregl-ctrl-bottom-right,
+.maplibregl-ctrl-top-left, .maplibregl-ctrl-attrib { display: none !important; }

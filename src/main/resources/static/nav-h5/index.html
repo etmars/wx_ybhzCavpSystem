@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>宜泊慧智 C-AVP 导航</title>
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <div id="map"></div>
+
+  <!-- 顶栏 -->
+  <div class="toolbar" id="toolbar">
+    <div class="toolbar-back" id="btnBack">
+      <img src="./icons/back.svg" alt="返回" />
+    </div>
+    <div class="toolbar-title">宜泊慧智C-AVP</div>
+    <div class="toolbar-placeholder"></div>
+  </div>
+
+  <!-- 导航面板 -->
+  <div class="nav-panel" id="navPanel">
+    <div class="nav-spot-title" id="spotTitle">目标车位</div>
+
+    <div class="nav-row-main">
+      <div class="nav-maneuver-icon" id="maneuverIcon">
+        <img id="maneuverImg" src="./icons/turn-straight.svg" alt="方向" />
+      </div>
+      <div class="nav-remain-large">
+        <span class="nav-remain-value" id="remainValue">--</span>
+        <span class="nav-remain-unit" id="remainUnit"></span>
+      </div>
+      <div class="nav-eta-hint" id="etaHint"></div>
+    </div>
+
+    <div class="nav-maneuver-text" id="maneuverText">沿当前方向直行可接近目标车位</div>
+
+    <div class="nav-progress">
+      <div class="nav-progress-bar" id="progressBar" style="width: 0%"></div>
+    </div>
+
+    <div class="nav-eta-arrival" id="etaArrival"></div>
+
+    <div class="nav-actions">
+      <button class="btn-nav" id="btnNav">开始导航</button>
+    </div>
+  </div>
+
+  <!-- 回中 FAB -->
+  <button class="fab-locate" id="btnRecenter">
+    <img src="./icons/locate.svg" alt="定位" />
+  </button>
+
+  <!-- 到达卡片 -->
+  <div class="arrival-mask" id="arrivalMask">
+    <div class="arrival-card">
+      <div class="arrival-icon">
+        <img src="./icons/check.svg" alt="到达" />
+      </div>
+      <div class="arrival-text" id="arrivalText">已抵达</div>
+      <button class="btn-nav btn-arrival" id="btnArrivalDone">完成</button>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>

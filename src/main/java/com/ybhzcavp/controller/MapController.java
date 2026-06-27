@@ -39,7 +39,13 @@ public class MapController {
 
     @GetMapping("/api/maps/{mapId}/geometry")
     public ObjectNode geometry(@PathVariable String mapId) {
-        return locateService.mapMeta(mapId);
+        MapDataService.MapEntry map = mapDataService.resolveMap(mapId);
+        ObjectNode node = locateService.getMapSceneJson(mapId);
+        if (map != null) {
+            node.put("map_id", map.id());
+            node.put("map_name", map.name());
+        }
+        return node;
     }
 
     @GetMapping("/api/maps/index")
