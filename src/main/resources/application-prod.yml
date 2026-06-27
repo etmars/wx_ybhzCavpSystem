@@ -1,0 +1,11 @@
+# 生产 profile：HTTPS 9065
+# 启动: java -jar xxx.jar --spring.profiles.active=prod
+# 证书由 certbot 申请后用 openssl 转 PKCS12，路径通过环境变量覆盖：
+#   CERT_PATH / CERT_PWD / CERT_ALIAS
+server:
+  port: 9065
+  ssl:
+    key-store: ${CERT_PATH:./cert/keystore.p12}
+    key-store-password: ${CERT_PWD:changeit}
+    key-store-type: PKCS12
+    key-alias: ${CERT_ALIAS:cavp}

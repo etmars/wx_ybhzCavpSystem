@@ -6,3 +6,10 @@ target/
 .classpath
 .project
 .settings/
+# 证书与私钥，绝不提交
+cert/
+*.p12
+*.pem
+*.key
+*.crt
+*.keystore
