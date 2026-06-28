@@ -138,7 +138,9 @@ async function initMap() {
     container: 'map',
     style,
     center,
-    zoom: 18.5,
+    zoom: 18,
+    maxZoom: 19,
+    minZoom: 16,
     pitch: 42,
     bearing: MAP_BEARING,
     antialias: true,
@@ -157,12 +159,12 @@ async function initMap() {
 }
 
 function fitToBounds() {
-  if (!map || routePoints.length < 1) return;
+  if (!map || routePoints.length < 2) return;
   const coords = routePoints.map(p => [p.longitude, p.latitude]);
   if (destination) coords.push([destination.longitude, destination.latitude]);
-  if (coords.length >= 1) {
+  if (coords.length >= 2) {
     const bounds = coords.reduce((b, c) => b.extend(c), new maplibregl.LngLatBounds(coords[0], coords[0]));
-    map.fitBounds(bounds, { padding: { top: 120, bottom: 240, left: 40, right: 40 }, pitch: 42, bearing: MAP_BEARING, duration: 0 });
+    map.fitBounds(bounds, { padding: { top: 120, bottom: 240, left: 40, right: 40 }, pitch: 42, bearing: MAP_BEARING, maxZoom: 19, duration: 0 });
   }
 }
 
