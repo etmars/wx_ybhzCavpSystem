@@ -14,3 +14,5 @@ cert-tools/out/
 *.key
 *.crt
 *.keystore
+__pycache__/
+*.pyc

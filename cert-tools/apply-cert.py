@@ -15,6 +15,7 @@ import requests
 from cryptography import x509
 from cryptography.x509.oid import NameOID
 from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.serialization import pkcs12
 from cryptography.hazmat.primitives.asymmetric import ec
 
 
@@ -188,8 +189,10 @@ def main():
 
     print("[4/6] 生成 CSR 并请求签发...")
     domain_key = ec.generate_private_key(ec.SECP256R1())
-    csr = x509.CertificateSigningRequestBuilder().add_attribute(
-        x509.oid.NameOID.COMMON_NAME, DOMAIN.encode("ascii")
+    csr = x509.CertificateSigningRequestBuilder().subject_name(
+        x509.Name([x509.NameAttribute(x509.oid.NameOID.COMMON_NAME, DOMAIN)])
+    ).add_extension(
+        x509.BasicConstraints(ca=False, path_length=None), critical=True
     ).sign(domain_key, hashes.SHA256())
     der = csr.public_bytes(serialization.Encoding.DER)
     order = acme.get(order_url)
@@ -226,7 +229,7 @@ def main():
     except Exception:
         all_certs = [cert_obj]
     cas = all_certs[1:] if len(all_certs) > 1 else None
-    p12 = serialization.pkcs12.serialize_key_and_certificates(
+    p12 = pkcs12.serialize_key_and_certificates(
         name=b"cavp",
         key=domain_key,
         cert=cert_obj,
