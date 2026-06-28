@@ -15,21 +15,18 @@ const Q = getQuery();
 const TILES_BASE = Q.tiles_base || 'https://parkinglot.c-avp.com:9065/tiles';
 const MAP_ID = Q.map_id || 'ziguang_1-B2';
 const TILES_URL = `${TILES_BASE}/{z}/{x}/{y}.pbf?map_id=${MAP_ID}`;
-const CENTER_LON = parseFloat(Q.center_lon) || 0;
-const CENTER_LAT = parseFloat(Q.center_lat) || 0;
 const MAP_BEARING = parseFloat(Q.map_bearing) || 0;
 const GEO_API = Q.geo_api || `https://parkinglot.c-avp.com:9065/api/maps/${MAP_ID}/geometry`;
+const ASSIGNMENT_API = Q.assignment_api || `https://parkinglot.c-avp.com:9065/api/avp/assignment`;
+const PUCK_API = (Q.puck_api || TILES_BASE.replace('/tiles', '/api/puck'));
 
 let routePoints = [];
-try { routePoints = JSON.parse(Q.route_points || '[]'); } catch (e) {}
 let destination = null;
-try { destination = JSON.parse(Q.destination || 'null'); } catch (e) {}
 const SPACE_ID = Q.space_id || '';
-const SPOT_TITLE = Q.spot_title || (SPACE_ID ? `目标车位 ${SPACE_ID}` : '目标车位');
-let TOTAL_LEN = parseFloat(Q.total_len) || 0;
-let ETA_SECONDS = parseFloat(Q.eta_seconds) || 0;
+let SPOT_TITLE = Q.spot_title || (SPACE_ID ? `目标车位 ${SPACE_ID}` : '目标车位');
+let TOTAL_LEN = 0;
+let ETA_SECONDS = 0;
 const SESSION_ID = Q.session_id || 'default';
-const PUCK_API = (Q.puck_api || TILES_BASE.replace('/tiles', '/api/puck'));
 
 // 状态
 let map = null;
@@ -118,15 +115,15 @@ function snapToRoute(position, pts) {
 // ===== MapLibre 初始化 =====
 async function initMap() {
   // 用 geometry 接口获取真实中心点
-  let center = [CENTER_LON, CENTER_LAT];
+  let center = [0.1353, -0.0085];
   try {
     const res = await fetch(GEO_API);
     const geo = await res.json();
-    if (geo.centerLon && geo.centerLat) {
+    if (geo.centerLon != null && geo.centerLat != null) {
       center = [geo.centerLon, geo.centerLat];
     }
   } catch (e) {
-    console.warn('geo api failed, fallback to query center', e);
+    console.warn('geo api failed, fallback center', e);
   }
 
   // 加载 style JSON 并替换瓦片 URL 占位
@@ -147,15 +144,38 @@ async function initMap() {
     attributionControl: false,
   });
 
-  map.on('load', () => {
-    addRouteLayers();
+  map.on('load', async () => {
     addUserPuckLayers();
+    // 从后端拉取分配的路线（路线由服务器分配，不通过 URL 传）
+    await loadAssignment();
+    addRouteLayers();
     addDestinationMarker();
     fitToBounds();
+    updateUI();
   });
 
   // 暴露给外部定位更新
   window.__map = map;
+}
+
+async function loadAssignment() {
+  try {
+    const res = await fetch(ASSIGNMENT_API);
+    const a = await res.json();
+    const pointsPos = a.pointsPos || [];
+    routePoints = (Array.isArray(pointsPos) ? pointsPos : []).map(p => ({
+      latitude: p.latitude ?? p.lat,
+      longitude: p.longitude ?? p.lon,
+    }));
+    destination = routePoints.length > 0 ? routePoints[routePoints.length - 1] : null;
+    if (a.spaceId) {
+      SPOT_TITLE = `目标车位 ${a.spaceId}`;
+    }
+    TOTAL_LEN = a.totalLen || 0;
+    ETA_SECONDS = a.estTotalTime || 0;
+  } catch (e) {
+    console.warn('assignment api failed', e);
+  }
 }
 
 function fitToBounds() {
