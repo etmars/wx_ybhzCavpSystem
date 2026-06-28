@@ -21,9 +21,9 @@ const MAP_BEARING = parseFloat(Q.map_bearing) || 0;
 const GEO_API = Q.geo_api || `https://parkinglot.c-avp.com:9065/api/maps/${MAP_ID}/geometry`;
 
 let routePoints = [];
-try { routePoints = JSON.parse(decodeURIComponent(Q.route_points || '[]')); } catch (e) {}
+try { routePoints = JSON.parse(Q.route_points || '[]'); } catch (e) {}
 let destination = null;
-try { destination = JSON.parse(decodeURIComponent(Q.destination || 'null')); } catch (e) {}
+try { destination = JSON.parse(Q.destination || 'null'); } catch (e) {}
 const SPACE_ID = Q.space_id || '';
 const SPOT_TITLE = Q.spot_title || (SPACE_ID ? `目标车位 ${SPACE_ID}` : '目标车位');
 let TOTAL_LEN = parseFloat(Q.total_len) || 0;
