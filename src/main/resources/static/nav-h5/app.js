@@ -19,8 +19,8 @@ const TILES_URL = TILES_USE_MAP_ID
 const MAP_BEARING = parseFloat(Q.map_bearing) || 0;
 const GEO_API = Q.geo_api || `https://parkinglot.c-avp.com:9065/api/maps/${MAP_ID}/geometry`;
 const GROUTE_API = Q.groute_api || 'https://parkinglot.c-avp.com:9065/api/avp/groute-live';
+const GROUTE_FALLBACK_API = Q.groute_fallback_api || 'http://parkinglot.c-avp.com:3000/avp/groute';
 const VEHICLE_ID = Q.vehicle_id || 'I1000110';
-const ASSIGNMENT_API = Q.assignment_api || `https://parkinglot.c-avp.com:9065/api/avp/assignment`;
 const PUCK_API = Q.puck_api || 'https://parkinglot.c-avp.com:9065/api/puck';
 const NAV_FLOW = Q.nav_flow || 'PARKING_ENTRY';
 const AUTO_START = Q.auto_start === '1';
@@ -127,12 +127,24 @@ function getRouteJsonRaw() {
   }
 }
 
+function routeMatchesMapCenter(points) {
+  if (!mapCenter || !points || !points.length) return true;
+  const [cx, cy] = mapCenter;
+  const p = points[0];
+  return Math.abs(p.latitude - cy) <= 0.05 && Math.abs(p.longitude - cx) <= 0.05;
+}
+
 function applyRoutePoints(arr) {
   if (!Array.isArray(arr) || !arr.length) return false;
-  routePoints = arr.map((p) => ({
+  const points = arr.map((p) => ({
     latitude: p.latitude != null ? p.latitude : p.lat,
     longitude: p.longitude != null ? p.longitude : p.lon,
   }));
+  if (!routeMatchesMapCenter(points)) {
+    console.warn('route rejected: coordinates mismatch map area', points[0], mapCenter);
+    return false;
+  }
+  routePoints = points;
   destination = routePoints[routePoints.length - 1];
   if (!TOTAL_LEN && routePoints.length >= 2) {
     TOTAL_LEN = routePoints.reduce((acc, pt, i) => acc + (i > 0 ? distanceMeters(routePoints[i - 1], pt) : 0), 0);
@@ -140,6 +152,41 @@ function applyRoutePoints(arr) {
   if (!ETA_SECONDS && TOTAL_LEN) ETA_SECONDS = TOTAL_LEN / WALK_SPEED;
   remainMeters = TOTAL_LEN;
   return routePoints.length >= 2;
+}
+
+function applyGrouteRoot(root) {
+  const info = (root && root.infoData) || {};
+  const pathList = info.pathList || [];
+  const pointsPos = (pathList[0] && pathList[0].pointsPos) || [];
+  if (!Array.isArray(pointsPos) || !pointsPos.length) return false;
+  if (info.spaceId) {
+    SPOT_TITLE = NAV_FLOW === 'PICKUP_EXIT'
+      ? `目标出口 ${info.spaceId}`
+      : `目标车位 ${info.spaceId}`;
+  }
+  if (info.totalLen != null && !TOTAL_LEN) TOTAL_LEN = info.totalLen;
+  if (info.estTotalTime != null && !ETA_SECONDS) ETA_SECONDS = info.estTotalTime;
+  remainMeters = TOTAL_LEN;
+  return applyRoutePoints(pointsPos);
+}
+
+async function fetchGrouteFrom(url) {
+  const res = await fetch(`${url}?vehicleId=${encodeURIComponent(VEHICLE_ID)}`);
+  if (!res.ok) return false;
+  const root = await res.json();
+  return applyGrouteRoot(root);
+}
+
+async function loadRouteFromGroute() {
+  const urls = [GROUTE_API, GROUTE_FALLBACK_API].filter(Boolean);
+  for (let i = 0; i < urls.length; i += 1) {
+    try {
+      if (await fetchGrouteFrom(urls[i])) return true;
+    } catch (e) {
+      console.warn('groute failed', urls[i], e);
+    }
+  }
+  return false;
 }
 
 function parseRouteFromQuery() {
@@ -153,44 +200,9 @@ function parseRouteFromQuery() {
   }
 }
 
-async function loadRouteFromGroute() {
-  if (!GROUTE_API || !VEHICLE_ID) return false;
-  try {
-    const res = await fetch(`${GROUTE_API}?vehicleId=${encodeURIComponent(VEHICLE_ID)}`);
-    const root = await res.json();
-    const info = (root && root.infoData) || {};
-    const pathList = info.pathList || [];
-    const pointsPos = (pathList[0] && pathList[0].pointsPos) || [];
-    if (!Array.isArray(pointsPos) || !pointsPos.length) return false;
-    if (info.spaceId) {
-      SPOT_TITLE = NAV_FLOW === 'PICKUP_EXIT'
-        ? `目标出口 ${info.spaceId}`
-        : `目标车位 ${info.spaceId}`;
-    }
-    if (info.totalLen != null && !TOTAL_LEN) TOTAL_LEN = info.totalLen;
-    if (info.estTotalTime != null && !ETA_SECONDS) ETA_SECONDS = info.estTotalTime;
-    remainMeters = TOTAL_LEN;
-    return applyRoutePoints(pointsPos);
-  } catch (e) {
-    console.warn('groute failed', e);
-    return false;
-  }
-}
-
-async function loadAssignmentFallback() {
-  try {
-    const res = await fetch(ASSIGNMENT_API);
-    const a = await res.json();
-    const pointsPos = a.pointsPos || [];
-    if (!Array.isArray(pointsPos) || !pointsPos.length) return;
-    applyRoutePoints(pointsPos);
-    if (a.spaceId) SPOT_TITLE = `目标车位 ${a.spaceId}`;
-    TOTAL_LEN = a.totalLen || TOTAL_LEN;
-    ETA_SECONDS = a.estTotalTime || ETA_SECONDS;
-    remainMeters = TOTAL_LEN;
-  } catch (e) {
-    console.warn('assignment api failed', e);
-  }
+async function resolveRoute() {
+  if (parseRouteFromQuery()) return true;
+  return loadRouteFromGroute();
 }
 
 async function initMap() {
@@ -227,22 +239,25 @@ async function initMap() {
     MapLayersUtil.registerNavArrowIcon(map);
     MapLayers.ensureUserPuckLayers(map);
 
-    let hasRoute = parseRouteFromQuery();
-    if (!hasRoute) hasRoute = await loadRouteFromGroute();
-    if (!hasRoute) await loadAssignmentFallback();
+    const hasRoute = await resolveRoute();
 
-    MapLayers.ensureNavRouteLayers(map, routePoints);
-    const arrows = MapLayers.buildDirectionArrows(routePoints);
-    if (map.getSource('nav-direction-arrows')) {
-      map.getSource('nav-direction-arrows').setData({ type: 'FeatureCollection', features: arrows });
+    if (hasRoute) {
+      MapLayers.ensureNavRouteLayers(map, routePoints);
+      const arrows = MapLayers.buildDirectionArrows(routePoints);
+      if (map.getSource('nav-direction-arrows')) {
+        map.getSource('nav-direction-arrows').setData({ type: 'FeatureCollection', features: arrows });
+      }
+      if (NAV_FLOW === 'PARKING_ENTRY' && SPACE_ID) {
+        MapLayers.highlightTargetSpace(map, SPACE_ID);
+      }
+      fitToBounds();
+    } else {
+      map.flyTo({ center: mapCenter, zoom: 18, pitch: 42, bearing: MAP_BEARING, duration: 0 });
+      document.getElementById('maneuverText').textContent = '路线加载失败，请返回重试';
     }
-    if (NAV_FLOW === 'PARKING_ENTRY' && SPACE_ID) {
-      MapLayers.highlightTargetSpace(map, SPACE_ID);
-    }
-    fitToBounds();
     updateUI();
-    postToMiniProgram({ type: 'h5Ready' });
-    if (AUTO_START) startNavigation();
+    postToMiniProgram({ type: 'h5Ready', routeOk: hasRoute });
+    if (AUTO_START && hasRoute) startNavigation();
   });
 
   window.__map = map;
