@@ -18,6 +18,7 @@ const TILES_URL = TILES_USE_MAP_ID
   : `${TILES_BASE}/{z}/{x}/{y}.pbf`;
 const MAP_BEARING = parseFloat(Q.map_bearing) || 0;
 const GEO_API = Q.geo_api || `https://parkinglot.c-avp.com:9065/api/maps/${MAP_ID}/geometry`;
+const ROUTE_API = Q.route_api || `https://parkinglot.c-avp.com:9065/api/nav/route`;
 const ASSIGNMENT_API = Q.assignment_api || `https://parkinglot.c-avp.com:9065/api/avp/assignment`;
 const PUCK_API = Q.puck_api || 'https://parkinglot.c-avp.com:9065/api/puck';
 const NAV_FLOW = Q.nav_flow || 'PARKING_ENTRY';
@@ -34,6 +35,7 @@ const SESSION_ID = Q.session_id || 'default';
 let routePoints = [];
 let destination = null;
 let map = null;
+let mapCenter = null;
 let navigating = false;
 let userPosition = null;
 let progress = 0;
@@ -113,25 +115,59 @@ function snapToRoute(position, pts) {
   return { point: bestPoint, remainMeters: remain, progress: prog, segmentIndex: bestIdx };
 }
 
+function getRouteJsonRaw() {
+  if (Q.points_pos_json) return Q.points_pos_json;
+  const hash = window.location.hash.slice(1);
+  if (!hash) return null;
+  try {
+    return new URLSearchParams(hash).get('route');
+  } catch (e) {
+    return null;
+  }
+}
+
+function applyRoutePoints(arr) {
+  if (!Array.isArray(arr) || !arr.length) return false;
+  routePoints = arr.map((p) => ({
+    latitude: p.latitude != null ? p.latitude : p.lat,
+    longitude: p.longitude != null ? p.longitude : p.lon,
+  }));
+  destination = routePoints[routePoints.length - 1];
+  if (!TOTAL_LEN && routePoints.length >= 2) {
+    TOTAL_LEN = routePoints.reduce((acc, pt, i) => acc + (i > 0 ? distanceMeters(routePoints[i - 1], pt) : 0), 0);
+  }
+  if (!ETA_SECONDS && TOTAL_LEN) ETA_SECONDS = TOTAL_LEN / WALK_SPEED;
+  remainMeters = TOTAL_LEN;
+  return routePoints.length >= 2;
+}
+
 function parseRouteFromQuery() {
-  const raw = Q.points_pos_json;
+  const raw = getRouteJsonRaw();
   if (!raw) return false;
   try {
-    const arr = JSON.parse(raw);
-    if (!Array.isArray(arr) || !arr.length) return false;
-    routePoints = arr.map((p) => ({
-      latitude: p.latitude != null ? p.latitude : p.lat,
-      longitude: p.longitude != null ? p.longitude : p.lon,
-    }));
-    destination = routePoints[routePoints.length - 1];
-    if (!TOTAL_LEN && routePoints.length >= 2) {
-      TOTAL_LEN = routePoints.reduce((acc, pt, i) => acc + (i > 0 ? distanceMeters(routePoints[i - 1], pt) : 0), 0);
-    }
-    if (!ETA_SECONDS && TOTAL_LEN) ETA_SECONDS = TOTAL_LEN / WALK_SPEED;
-    remainMeters = TOTAL_LEN;
-    return true;
+    return applyRoutePoints(JSON.parse(raw));
   } catch (e) {
     console.warn('parseRouteFromQuery failed', e);
+    return false;
+  }
+}
+
+async function loadRouteFromSession() {
+  if (!SESSION_ID || SESSION_ID === 'default') return false;
+  try {
+    const res = await fetch(`${ROUTE_API}?sessionId=${encodeURIComponent(SESSION_ID)}`);
+    const data = await res.json();
+    if (!data.ok || !Array.isArray(data.pointsPos) || !data.pointsPos.length) return false;
+    if (data.spaceId) {
+      SPOT_TITLE = NAV_FLOW === 'PICKUP_EXIT'
+        ? `目标出口 ${data.spaceId}`
+        : `目标车位 ${data.spaceId}`;
+    }
+    if (data.totalLen) TOTAL_LEN = data.totalLen;
+    if (data.estTotalTime) ETA_SECONDS = data.estTotalTime;
+    return applyRoutePoints(data.pointsPos);
+  } catch (e) {
+    console.warn('session route failed', e);
     return false;
   }
 }
@@ -141,11 +177,8 @@ async function loadAssignmentFallback() {
     const res = await fetch(ASSIGNMENT_API);
     const a = await res.json();
     const pointsPos = a.pointsPos || [];
-    routePoints = (Array.isArray(pointsPos) ? pointsPos : []).map((p) => ({
-      latitude: p.latitude ?? p.lat,
-      longitude: p.longitude ?? p.lon,
-    }));
-    destination = routePoints.length > 0 ? routePoints[routePoints.length - 1] : null;
+    if (!Array.isArray(pointsPos) || !pointsPos.length) return;
+    applyRoutePoints(pointsPos);
     if (a.spaceId) SPOT_TITLE = `目标车位 ${a.spaceId}`;
     TOTAL_LEN = a.totalLen || TOTAL_LEN;
     ETA_SECONDS = a.estTotalTime || ETA_SECONDS;
@@ -164,6 +197,7 @@ async function initMap() {
   } catch (e) {
     console.warn('geo api failed', e);
   }
+  mapCenter = center;
 
   const styleRes = await fetch('./map-style.json');
   const style = await styleRes.json();
@@ -188,8 +222,11 @@ async function initMap() {
     MapLayersUtil.registerNavArrowIcon(map);
     MapLayers.ensureUserPuckLayers(map);
 
-    const hasRoute = parseRouteFromQuery();
-    if (!hasRoute) await loadAssignmentFallback();
+    let hasRoute = parseRouteFromQuery();
+    if (!hasRoute) hasRoute = await loadRouteFromSession();
+    if (!hasRoute && (!SESSION_ID || SESSION_ID === 'default')) {
+      await loadAssignmentFallback();
+    }
 
     MapLayers.ensureNavRouteLayers(map, routePoints);
     const arrows = MapLayers.buildDirectionArrows(routePoints);
@@ -211,6 +248,15 @@ async function initMap() {
 function fitToBounds() {
   if (!map || routePoints.length < 2) return;
   const coords = routePoints.map((p) => [p.longitude, p.latitude]);
+  if (mapCenter) {
+    const [cx, cy] = mapCenter;
+    const far = coords.some(([x, y]) => Math.abs(x - cx) > 0.02 || Math.abs(y - cy) > 0.02);
+    if (far) {
+      console.warn('route out of map area, keep map center');
+      map.flyTo({ center: mapCenter, zoom: 18, pitch: 42, bearing: MAP_BEARING, duration: 0 });
+      return;
+    }
+  }
   const bounds = coords.reduce((b, c) => b.extend(c), new maplibregl.LngLatBounds(coords[0], coords[0]));
   map.fitBounds(bounds, { padding: { top: 120, bottom: 240, left: 40, right: 40 }, pitch: 42, bearing: MAP_BEARING, maxZoom: 19, duration: 0 });
 }
