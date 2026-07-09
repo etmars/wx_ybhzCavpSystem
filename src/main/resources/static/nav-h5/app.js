@@ -19,9 +19,6 @@ const TILES_URL = TILES_USE_MAP_ID
 const MAP_BEARING = parseFloat(Q.map_bearing) || 0;
 const GEO_API = Q.geo_api || `https://parkinglot.c-avp.com:9065/api/maps/${MAP_ID}/geometry`;
 const ROUTE_API = Q.route_api || 'https://parkinglot.c-avp.com:9065/api/nav/route';
-const GROUTE_API = Q.groute_api || 'https://parkinglot.c-avp.com:9065/api/avp/groute-live';
-const GROUTE_FALLBACK_API = Q.groute_fallback_api || '';
-const VEHICLE_ID = Q.vehicle_id || 'I1000110';
 const PUCK_API = Q.puck_api || 'https://parkinglot.c-avp.com:9065/api/puck';
 const NAV_FLOW = Q.nav_flow || 'PARKING_ENTRY';
 const AUTO_START = Q.auto_start === '1';
@@ -117,34 +114,14 @@ function snapToRoute(position, pts) {
   return { point: bestPoint, remainMeters: remain, progress: prog, segmentIndex: bestIdx };
 }
 
-function getRouteJsonRaw() {
-  if (Q.points_pos_json) return Q.points_pos_json;
-  const hash = window.location.hash.slice(1);
-  if (!hash) return null;
-  try {
-    return new URLSearchParams(hash).get('route');
-  } catch (e) {
-    return null;
-  }
-}
-
-function routeMatchesMapCenter(points) {
-  if (!mapCenter || !points || !points.length) return true;
-  const [cx, cy] = mapCenter;
-  const p = points[0];
-  return Math.abs(p.latitude - cy) <= 0.05 && Math.abs(p.longitude - cx) <= 0.05;
-}
 
 function applyRoutePoints(arr) {
   if (!Array.isArray(arr) || !arr.length) return false;
   const points = arr.map((p) => ({
     latitude: p.latitude != null ? p.latitude : p.lat,
     longitude: p.longitude != null ? p.longitude : p.lon,
-  }));
-  if (!routeMatchesMapCenter(points)) {
-    console.warn('route rejected: coordinates mismatch map area', points[0], mapCenter);
-    return false;
-  }
+  })).filter((p) => p.latitude != null && p.longitude != null);
+  if (points.length < 2) return false;
   routePoints = points;
   destination = routePoints[routePoints.length - 1];
   if (!TOTAL_LEN && routePoints.length >= 2) {
@@ -152,53 +129,7 @@ function applyRoutePoints(arr) {
   }
   if (!ETA_SECONDS && TOTAL_LEN) ETA_SECONDS = TOTAL_LEN / WALK_SPEED;
   remainMeters = TOTAL_LEN;
-  return routePoints.length >= 2;
-}
-
-function applyGrouteRoot(root) {
-  const info = (root && root.infoData) || {};
-  const pathList = info.pathList || [];
-  const pointsPos = (pathList[0] && pathList[0].pointsPos) || [];
-  if (!Array.isArray(pointsPos) || !pointsPos.length) return false;
-  if (info.spaceId) {
-    SPOT_TITLE = NAV_FLOW === 'PICKUP_EXIT'
-      ? `目标出口 ${info.spaceId}`
-      : `目标车位 ${info.spaceId}`;
-  }
-  if (info.totalLen != null && !TOTAL_LEN) TOTAL_LEN = info.totalLen;
-  if (info.estTotalTime != null && !ETA_SECONDS) ETA_SECONDS = info.estTotalTime;
-  remainMeters = TOTAL_LEN;
-  return applyRoutePoints(pointsPos);
-}
-
-async function fetchGrouteFrom(url) {
-  const res = await fetch(`${url}?vehicleId=${encodeURIComponent(VEHICLE_ID)}`);
-  if (!res.ok) return false;
-  const root = await res.json();
-  return applyGrouteRoot(root);
-}
-
-async function loadRouteFromGroute() {
-  const urls = [GROUTE_API, GROUTE_FALLBACK_API].filter(Boolean);
-  for (let i = 0; i < urls.length; i += 1) {
-    try {
-      if (await fetchGrouteFrom(urls[i])) return true;
-    } catch (e) {
-      console.warn('groute failed', urls[i], e);
-    }
-  }
-  return false;
-}
-
-function parseRouteFromQuery() {
-  const raw = getRouteJsonRaw();
-  if (!raw) return false;
-  try {
-    return applyRoutePoints(JSON.parse(raw));
-  } catch (e) {
-    console.warn('parseRouteFromQuery failed', e);
-    return false;
-  }
+  return true;
 }
 
 async function loadRouteFromSession() {
@@ -219,9 +150,7 @@ async function loadRouteFromSession() {
 }
 
 async function resolveRoute() {
-  if (await loadRouteFromSession()) return true;
-  if (parseRouteFromQuery()) return true;
-  return loadRouteFromGroute();
+  return loadRouteFromSession();
 }
 
 async function initMap() {
@@ -285,15 +214,6 @@ async function initMap() {
 function fitToBounds() {
   if (!map || routePoints.length < 2) return;
   const coords = routePoints.map((p) => [p.longitude, p.latitude]);
-  if (mapCenter) {
-    const [cx, cy] = mapCenter;
-    const far = coords.some(([x, y]) => Math.abs(x - cx) > 0.02 || Math.abs(y - cy) > 0.02);
-    if (far) {
-      console.warn('route out of map area, keep map center');
-      map.flyTo({ center: mapCenter, zoom: 18, pitch: 42, bearing: MAP_BEARING, duration: 0 });
-      return;
-    }
-  }
   const bounds = coords.reduce((b, c) => b.extend(c), new maplibregl.LngLatBounds(coords[0], coords[0]));
   map.fitBounds(bounds, { padding: { top: 120, bottom: 240, left: 40, right: 40 }, pitch: 42, bearing: MAP_BEARING, maxZoom: 19, duration: 0 });
 }
