@@ -31,9 +31,9 @@ if not exist "%MVN%" (
 
 echo [1/3] 使用 Maven: %MVN%
 
-:: 1.5 若 8080 已被占用（旧后端还在跑），先结束进程，避免 jar 被锁导致 BUILD FAILURE
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":8080" ^| findstr "LISTENING"') do (
-  echo [提示] 端口 8080 被进程 %%a 占用，正在结束...
+:: 1.5 若 12380 已被占用（旧后端还在跑），先结束进程，避免 jar 被锁导致 BUILD FAILURE
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":12380" ^| findstr "LISTENING"') do (
+  echo [提示] 端口 12380 被进程 %%a 占用，正在结束...
   taskkill /PID %%a /F >nul 2>&1
 )
 timeout /t 2 /nobreak >nul
@@ -53,6 +53,6 @@ if errorlevel 1 (
   exit /b 1
 )
 
-echo [3/3] 启动服务 http://localhost:8080
+echo [3/3] 启动服务 http://localhost:12380
 echo        按 Ctrl+C 停止
 call "%MVN%" spring-boot:run

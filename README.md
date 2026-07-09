@@ -29,7 +29,7 @@ cd F:\wx_ybhzCavpSystem
 mvn spring-boot:run
 ```
 
-服务默认端口：**8080**
+服务默认端口：**12380**（本地 HTTP）；生产环境见 `application-prod.yml`（**9065** HTTPS，Nginx 反代）。
 
 ## 配置
 
@@ -70,7 +70,7 @@ Content-Type: application/json
 
 ## 微信小程序联调
 
-1. 启动本后端（8080）
+1. 启动本后端（本地 12380；服务器 prod 为 9065）
 2. 微信开发者工具打开 `wx_ybhzcavp`
 3. 勾选「不校验合法域名」
 4. `config.js` 中 `BASE_URL` 改为本机 IP（真机调试时不能用 localhost）

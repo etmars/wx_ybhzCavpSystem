@@ -1,5 +1,6 @@
 server:
-  port: 8080
+  # 本地开发 HTTP 端口；生产使用 application-prod.yml（9065 + HTTPS，Nginx 反代）
+  port: 12380
 
 spring:
   application:

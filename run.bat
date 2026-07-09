@@ -50,7 +50,7 @@ if not exist "data\maps\ziguang_1-B2\parking.mbtiles" (
 :: 3. 编译并启动
 echo.
 echo 使用 Maven: %MVN%
-echo 启动地址: http://localhost:8080
+echo 启动地址: http://localhost:12380
 echo 按 Ctrl+C 停止服务
 echo.
 

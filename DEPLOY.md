@@ -5,7 +5,7 @@
 ```
 手机微信小程序 (wx_ybhzcavp)
   ├─ 本地 KNN 定位（assets/loc_model.json + BLE）  ← 不需要联网
-  └─ 地图/路线 API ──────────→ 后端 (wx_ybhzCavpSystem:8080)
+  └─ 地图/路线 API ──────────→ 后端 (wx_ybhzCavpSystem 本地:12380 / 生产:9065)
 ```
 
 **定位在手机上本地算，后端只负责地图几何和车位分配。**
@@ -38,7 +38,7 @@ mvn spring-boot:run
 看到 `Started WxYbhzCavpApplication` 即成功。浏览器访问：
 
 ```
-http://localhost:8080/api/nearby?lng=120.635716&lat=31.422788&radius=5000
+http://localhost:12380/api/nearby?lng=120.635716&lat=31.422788&radius=5000
 ```
 
 应返回 JSON 停车场数据。
@@ -56,7 +56,7 @@ http://localhost:8080/api/nearby?lng=120.635716&lat=31.422788&radius=5000
 `config.js` 保持默认即可：
 
 ```js
-const BASE_URL = 'http://localhost:8080';
+const BASE_URL = 'http://localhost:12380';
 ```
 
 流程：首页 → 我要停车 → 按路线行驶 → 导航页
@@ -70,7 +70,7 @@ const BASE_URL = 'http://localhost:8080';
 3. 修改 `F:\wx_ybhzcavp\config.js`：
 
 ```js
-const BASE_URL = 'http://192.168.1.100:8080';
+const BASE_URL = 'http://192.168.1.100:12380';
 ```
 
 4. 微信开发者工具 → 预览 → 手机扫码
@@ -83,7 +83,7 @@ const BASE_URL = 'http://192.168.1.100:8080';
 | 现象 | 原因 | 解决 |
 |------|------|------|
 | `run.bat` 报 Maven 未找到 | 没装 Maven | 用 IntelliJ 打开运行，或让 run.bat 自动下载 |
-| 首页显示「后端未连接」 | 后端没启动或地址错 | 先启动后端，检查 8080 端口 |
+| 首页显示「后端未连接」 | 后端没启动或地址错 | 先启动后端，检查 12380 端口 |
 | 真机连不上 localhost | 手机访问不到本机 | 改成电脑局域网 IP |
 | 导航页地图空白 | 后端 geometry API 失败 | 确认 `data/maps/ziguang_1-B2/yiqi.osm` 存在 |
 | 定位不动 | 模拟器无 BLE | 必须真机 + 蓝牙 + 信标环境 |
@@ -106,23 +106,21 @@ mvn -DskipTests package
 
 2. 把整个 `data/` 目录和 jar 一起上传到服务器
 
-3. 运行：
+3. 运行（生产）：
 
 ```bash
-java -jar wx-ybhz-cavp-system-1.0.0.jar --server.port=8080
+bash deploy-prod.sh
+# 或
+java -jar wx-ybhz-cavp-system-1.0.0.jar --spring.profiles.active=prod
 ```
 
-4. 建议前面加 Nginx 反代 + HTTPS：
+服务监听 **HTTPS 9065**（`application-prod.yml`）。Nginx 将 `https://parkinglot.c-avp.com:9065` 反代到该端口。
 
-```nginx
-server {
-    listen 443 ssl;
-    server_name your-domain.com;
+4. 本地开发端口为 **12380**（`application.yml`），无需 Nginx：
 
-    location / {
-        proxy_pass http://127.0.0.1:8080;
-    }
-}
+```bash
+java -jar wx-ybhz-cavp-system-1.0.0.jar
+# 访问 http://localhost:12380
 ```
 
 5. 修改 `application.yml` 中的 `osmandroid-assets` 为服务器上的 data 路径（或直接把数据放在 `./data`）
@@ -163,8 +161,8 @@ const BASE_URL = 'https://your-domain.com';
 
 ## 五、最小验证清单
 
-- [ ] `http://localhost:8080/api/nearby?lng=120.635716&lat=31.422788&radius=5000` 有 JSON
-- [ ] `http://localhost:8080/api/avp/assignment` 返回 F074 路线
-- [ ] `http://localhost:8080/api/maps/ziguang_1-B2/geometry` 返回地图几何
+- [ ] `http://localhost:12380/api/nearby?lng=120.635716&lat=31.422788&radius=5000` 有 JSON
+- [ ] `http://localhost:12380/api/avp/assignment` 返回 F074 路线
+- [ ] `http://localhost:12380/api/maps/ziguang_1-B2/geometry` 返回地图几何
 - [ ] 微信开发者工具首页能分配车位
 - [ ] 真机蓝牙开启后能定位（停车场内）
