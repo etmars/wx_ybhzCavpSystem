@@ -30,6 +30,7 @@ let SPOT_TITLE = Q.spot_title || (
 let TOTAL_LEN = parseFloat(Q.total_len) || 0;
 let ETA_SECONDS = parseFloat(Q.est_total_time) || 0;
 const SESSION_ID = Q.session_id || 'default';
+const SEED_TEST_ROUTE = Q.seed_test_route === '1';
 
 let routePoints = [];
 let destination = null;
@@ -144,26 +145,56 @@ function applyRoutePoints(arr) {
   return true;
 }
 
+async function seedTestRouteIfNeeded() {
+  if (!SEED_TEST_ROUTE || !ROUTE_API) return;
+  const body = {
+    sessionId: SESSION_ID,
+    mapId: MAP_ID,
+    spaceId: SPACE_ID || 'B121',
+    totalLen: 213.72,
+    estTotalTime: 53.4,
+    pointsPos: [
+      { longitude: 116.4917772, latitude: 39.7295389 },
+      { longitude: 116.4917853, latitude: 39.7295424 },
+      { longitude: 116.4914705, latitude: 39.7305063 },
+    ],
+  };
+  const res = await fetch(ROUTE_API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (window.NavDebug) NavDebug.log('seed_test_route POST', { status: res.status, ok: res.ok });
+}
+
 async function loadRouteFromSession() {
   if (!ROUTE_API || !SESSION_ID) return false;
   for (let attempt = 0; attempt < 6; attempt += 1) {
     try {
-      const res = await fetch(`${ROUTE_API}?sessionId=${encodeURIComponent(SESSION_ID)}`);
+      const url = `${ROUTE_API}?sessionId=${encodeURIComponent(SESSION_ID)}`;
+      if (window.NavDebug) NavDebug.log(`route GET attempt ${attempt + 1}`, url);
+      const res = await fetch(url);
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
+        if (window.NavDebug) NavDebug.log('route GET http fail', { status: res.status, data });
         await new Promise((r) => setTimeout(r, 200));
         continue;
       }
-      const data = await res.json();
       if (!data.ok || !data.pointsPos) {
+        if (window.NavDebug) NavDebug.log('route GET no data', data);
         await new Promise((r) => setTimeout(r, 200));
         continue;
       }
+      if (window.NavDebug) NavDebug.log('route GET ok', { points: data.pointsPos.length, totalLen: data.totalLen });
       if (data.totalLen != null && !TOTAL_LEN) TOTAL_LEN = data.totalLen;
       if (data.estTotalTime != null && !ETA_SECONDS) ETA_SECONDS = data.estTotalTime;
       remainMeters = TOTAL_LEN;
-      if (applyRoutePoints(data.pointsPos)) return true;
+      const applied = applyRoutePoints(data.pointsPos);
+      if (window.NavDebug) NavDebug.log('applyRoutePoints', { applied, parsed: routePoints.length });
+      if (applied) return true;
     } catch (e) {
-      console.warn('session route failed', e);
+      if (window.NavDebug) NavDebug.logError('loadRouteFromSession', e);
+      else console.warn('session route failed', e);
     }
     await new Promise((r) => setTimeout(r, 200));
   }
@@ -171,6 +202,7 @@ async function loadRouteFromSession() {
 }
 
 async function resolveRoute() {
+  await seedTestRouteIfNeeded();
   return loadRouteFromSession();
 }
 
@@ -204,34 +236,48 @@ async function initMap() {
   });
 
   map.on('load', async () => {
-    MapLayersUtil.registerPoiIcons(map);
-    MapLayersUtil.registerNavArrowIcon(map);
-    MapLayers.ensureUserPuckLayers(map);
+    try {
+      if (window.NavDebug) NavDebug.log('map load', { SESSION_ID, ROUTE_API, MAP_ID });
+      MapLayersUtil.registerPoiIcons(map);
+      MapLayersUtil.registerNavArrowIcon(map);
+      MapLayers.ensureUserPuckLayers(map);
 
-    const hasRoute = await resolveRoute();
+      const hasRoute = await resolveRoute();
 
-    if (hasRoute) {
-      MapLayers.ensureNavRouteLayers(map, routePoints);
-      const arrows = MapLayers.buildDirectionArrows(routePoints);
-      if (map.getSource('nav-direction-arrows')) {
-        map.getSource('nav-direction-arrows').setData({ type: 'FeatureCollection', features: arrows });
-      }
-      if (NAV_FLOW === 'PARKING_ENTRY' && SPACE_ID) {
-        MapLayers.highlightTargetSpace(map, SPACE_ID);
-      }
-      map.resize();
-      fitToBounds();
-      map.once('idle', () => {
+      if (hasRoute) {
+        MapLayers.ensureNavRouteLayers(map, routePoints);
+        const arrows = MapLayers.buildDirectionArrows(routePoints);
+        if (map.getSource('nav-direction-arrows')) {
+          map.getSource('nav-direction-arrows').setData({ type: 'FeatureCollection', features: arrows });
+        }
+        if (NAV_FLOW === 'PARKING_ENTRY' && SPACE_ID) {
+          MapLayers.highlightTargetSpace(map, SPACE_ID);
+        }
+        if (window.NavDebug) NavDebug.reportRouteState(map, routePoints, { hasRoute: true });
         map.resize();
         fitToBounds();
-      });
-    } else {
-      map.flyTo({ center: mapCenter, zoom: 18, pitch: 42, bearing: MAP_BEARING, duration: 0 });
-      document.getElementById('maneuverText').textContent = '路线加载失败，请返回重试';
+        map.once('idle', () => {
+          map.resize();
+          fitToBounds();
+          if (window.NavDebug) NavDebug.reportRouteState(map, routePoints, { afterIdle: true });
+        });
+      } else {
+        if (window.NavDebug) NavDebug.log('route missing', { SESSION_ID, total_len: TOTAL_LEN });
+        map.flyTo({ center: mapCenter, zoom: 18, pitch: 42, bearing: MAP_BEARING, duration: 0 });
+        document.getElementById('maneuverText').textContent = '路线加载失败，请返回重试';
+      }
+      updateUI();
+      postToMiniProgram({ type: 'h5Ready', routeOk: hasRoute });
+      if (AUTO_START && hasRoute) startNavigation();
+    } catch (e) {
+      if (window.NavDebug) NavDebug.logError('map.on(load)', e);
+      else console.error(e);
+      document.getElementById('maneuverText').textContent = `地图初始化错误: ${e.message || e}`;
     }
-    updateUI();
-    postToMiniProgram({ type: 'h5Ready', routeOk: hasRoute });
-    if (AUTO_START && hasRoute) startNavigation();
+  });
+
+  map.on('error', (e) => {
+    if (window.NavDebug) NavDebug.logError('map error', e.error || e);
   });
 
   window.__map = map;

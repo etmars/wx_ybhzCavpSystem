@@ -51,7 +51,12 @@ function routeStackBeforeId(map) {
 const ROUTE_LINE_LAYOUT = { 'line-cap': 'round', 'line-join': 'round' };
 
 function addRouteLineLayer(map, layer, beforeId) {
-  map.addLayer(layer, beforeId);
+  try {
+    map.addLayer(layer, beforeId);
+  } catch (e) {
+    console.warn('addRouteLineLayer fallback', layer.id, e);
+    map.addLayer(layer);
+  }
 }
 
 function moveRouteLayersToTop(map) {
@@ -59,15 +64,6 @@ function moveRouteLayersToTop(map) {
     .forEach((id) => {
       if (map.getLayer(id)) map.moveLayer(id);
     });
-}
-
-/** pitch 下 3D 墙体容易遮挡地面路线，略微降低不透明度便于看见路径 */
-function softenExtrusionsForRoute(map) {
-  ['wall-1000-extrusion', 'blocker-100202-extrusion'].forEach((id) => {
-    if (map.getLayer(id)) {
-      map.setPaintProperty(id, 'fill-extrusion-opacity', 0.42);
-    }
-  });
 }
 
 function ensureUserPuckLayers(map) {
@@ -178,13 +174,11 @@ function ensureNavRouteLayers(map, routePoints) {
     }, beforeId);
 
     moveRouteLayersToTop(map);
-    softenExtrusionsForRoute(map);
   } else {
     map.getSource('nav-route-source').setData(fullLine);
     map.getSource('nav-route-remaining-source').setData(fullLine);
     map.getSource('nav-route-end-source').setData(endPoint);
     moveRouteLayersToTop(map);
-    softenExtrusionsForRoute(map);
   }
 }
 
