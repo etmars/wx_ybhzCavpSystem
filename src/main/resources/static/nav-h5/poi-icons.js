@@ -13,11 +13,21 @@ function createPoiCanvas(drawFn) {
   ctx.lineJoin = 'round';
   const r = 7;
   ctx.beginPath();
-  ctx.roundRect(r, r, size - r * 2, size - r * 2, 9);
+  if (typeof ctx.roundRect === 'function') {
+    ctx.roundRect(r, r, size - r * 2, size - r * 2, 9);
+  } else {
+    ctx.rect(r, r, size - r * 2, size - r * 2);
+  }
   ctx.fill();
   ctx.stroke();
   drawFn(ctx, size);
   return canvas;
+}
+
+function addCanvasImage(map, id, canvas) {
+  if (map.hasImage(id)) return;
+  // MapLibre 4.x：canvas + pixelRatio 2 会触发 mismatched image size，直接传 canvas 即可
+  map.addImage(id, canvas);
 }
 
 function registerPoiIcons(map) {
@@ -51,8 +61,10 @@ function registerPoiIcons(map) {
     },
   };
   Object.keys(icons).forEach((id) => {
-    if (!map.hasImage(id)) {
-      map.addImage(id, createPoiCanvas(icons[id]), { pixelRatio: 2 });
+    try {
+      addCanvasImage(map, id, createPoiCanvas(icons[id]));
+    } catch (e) {
+      console.warn('registerPoiIcons skip', id, e);
     }
   });
 }
@@ -72,7 +84,11 @@ function registerNavArrowIcon(map) {
   ctx.lineTo(4, 28);
   ctx.closePath();
   ctx.fill();
-  map.addImage(id, canvas, { pixelRatio: 2 });
+  try {
+    addCanvasImage(map, id, canvas);
+  } catch (e) {
+    console.warn('registerNavArrowIcon failed', e);
+  }
 }
 
 window.MapLayersUtil = {
