@@ -18,8 +18,9 @@ const TILES_URL = TILES_USE_MAP_ID
   : `${TILES_BASE}/{z}/{x}/{y}.pbf`;
 const MAP_BEARING = parseFloat(Q.map_bearing) || 0;
 const GEO_API = Q.geo_api || `https://parkinglot.c-avp.com:9065/api/maps/${MAP_ID}/geometry`;
+const ROUTE_API = Q.route_api || 'https://parkinglot.c-avp.com:9065/api/nav/route';
 const GROUTE_API = Q.groute_api || 'https://parkinglot.c-avp.com:9065/api/avp/groute-live';
-const GROUTE_FALLBACK_API = Q.groute_fallback_api || 'http://parkinglot.c-avp.com:3000/avp/groute';
+const GROUTE_FALLBACK_API = Q.groute_fallback_api || '';
 const VEHICLE_ID = Q.vehicle_id || 'I1000110';
 const PUCK_API = Q.puck_api || 'https://parkinglot.c-avp.com:9065/api/puck';
 const NAV_FLOW = Q.nav_flow || 'PARKING_ENTRY';
@@ -200,13 +201,31 @@ function parseRouteFromQuery() {
   }
 }
 
+async function loadRouteFromSession() {
+  if (!ROUTE_API || !SESSION_ID) return false;
+  try {
+    const res = await fetch(`${ROUTE_API}?sessionId=${encodeURIComponent(SESSION_ID)}`);
+    if (!res.ok) return false;
+    const data = await res.json();
+    if (!data.ok || !data.pointsPos) return false;
+    if (data.totalLen != null && !TOTAL_LEN) TOTAL_LEN = data.totalLen;
+    if (data.estTotalTime != null && !ETA_SECONDS) ETA_SECONDS = data.estTotalTime;
+    remainMeters = TOTAL_LEN;
+    return applyRoutePoints(data.pointsPos);
+  } catch (e) {
+    console.warn('session route failed', e);
+    return false;
+  }
+}
+
 async function resolveRoute() {
+  if (await loadRouteFromSession()) return true;
   if (parseRouteFromQuery()) return true;
   return loadRouteFromGroute();
 }
 
 async function initMap() {
-  let center = [0.1353, -0.0085];
+  let center = [116.4914516, 39.7300906];
   try {
     const res = await fetch(GEO_API);
     const geo = await res.json();
