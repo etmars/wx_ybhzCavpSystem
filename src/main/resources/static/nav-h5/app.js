@@ -115,12 +115,24 @@ function snapToRoute(position, pts) {
 }
 
 
+function parseRoutePoint(p) {
+  if (Array.isArray(p) && p.length >= 2) {
+    const longitude = Number(p[0]);
+    const latitude = Number(p[1]);
+    if (Number.isFinite(longitude) && Number.isFinite(latitude)) {
+      return { longitude, latitude };
+    }
+    return null;
+  }
+  const latitude = Number(p.latitude != null ? p.latitude : p.lat);
+  const longitude = Number(p.longitude != null ? p.longitude : (p.lon != null ? p.lon : p.lng));
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  return { latitude, longitude };
+}
+
 function applyRoutePoints(arr) {
   if (!Array.isArray(arr) || !arr.length) return false;
-  const points = arr.map((p) => ({
-    latitude: p.latitude != null ? p.latitude : p.lat,
-    longitude: p.longitude != null ? p.longitude : p.lon,
-  })).filter((p) => p.latitude != null && p.longitude != null);
+  const points = arr.map(parseRoutePoint).filter(Boolean);
   if (points.length < 2) return false;
   routePoints = points;
   destination = routePoints[routePoints.length - 1];
@@ -134,19 +146,28 @@ function applyRoutePoints(arr) {
 
 async function loadRouteFromSession() {
   if (!ROUTE_API || !SESSION_ID) return false;
-  try {
-    const res = await fetch(`${ROUTE_API}?sessionId=${encodeURIComponent(SESSION_ID)}`);
-    if (!res.ok) return false;
-    const data = await res.json();
-    if (!data.ok || !data.pointsPos) return false;
-    if (data.totalLen != null && !TOTAL_LEN) TOTAL_LEN = data.totalLen;
-    if (data.estTotalTime != null && !ETA_SECONDS) ETA_SECONDS = data.estTotalTime;
-    remainMeters = TOTAL_LEN;
-    return applyRoutePoints(data.pointsPos);
-  } catch (e) {
-    console.warn('session route failed', e);
-    return false;
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    try {
+      const res = await fetch(`${ROUTE_API}?sessionId=${encodeURIComponent(SESSION_ID)}`);
+      if (!res.ok) {
+        await new Promise((r) => setTimeout(r, 200));
+        continue;
+      }
+      const data = await res.json();
+      if (!data.ok || !data.pointsPos) {
+        await new Promise((r) => setTimeout(r, 200));
+        continue;
+      }
+      if (data.totalLen != null && !TOTAL_LEN) TOTAL_LEN = data.totalLen;
+      if (data.estTotalTime != null && !ETA_SECONDS) ETA_SECONDS = data.estTotalTime;
+      remainMeters = TOTAL_LEN;
+      if (applyRoutePoints(data.pointsPos)) return true;
+    } catch (e) {
+      console.warn('session route failed', e);
+    }
+    await new Promise((r) => setTimeout(r, 200));
   }
+  return false;
 }
 
 async function resolveRoute() {
@@ -198,7 +219,12 @@ async function initMap() {
       if (NAV_FLOW === 'PARKING_ENTRY' && SPACE_ID) {
         MapLayers.highlightTargetSpace(map, SPACE_ID);
       }
+      map.resize();
       fitToBounds();
+      map.once('idle', () => {
+        map.resize();
+        fitToBounds();
+      });
     } else {
       map.flyTo({ center: mapCenter, zoom: 18, pitch: 42, bearing: MAP_BEARING, duration: 0 });
       document.getElementById('maneuverText').textContent = '路线加载失败，请返回重试';

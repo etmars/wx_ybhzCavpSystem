@@ -31,6 +31,45 @@ function addExtraStyleLayers(style) {
   }
 }
 
+function lineFeature(coords) {
+  return {
+    type: 'Feature',
+    properties: {},
+    geometry: { type: 'LineString', coordinates: coords },
+  };
+}
+
+const EMPTY_FC = { type: 'FeatureCollection', features: [] };
+
+/** 对齐 Android：路线插在 parking-edge 之上、坡道层之下 */
+function routeStackBeforeId(map) {
+  if (map.getLayer('road-2005-ramp-fill')) return 'road-2005-ramp-fill';
+  if (map.getLayer('parking-label')) return 'parking-label';
+  return undefined;
+}
+
+const ROUTE_LINE_LAYOUT = { 'line-cap': 'round', 'line-join': 'round' };
+
+function addRouteLineLayer(map, layer, beforeId) {
+  map.addLayer(layer, beforeId);
+}
+
+function moveRouteLayersToTop(map) {
+  ['nav-route-casing', 'nav-route-traveled', 'nav-route-line', 'nav-route-end-layer', 'nav-direction-arrows-layer']
+    .forEach((id) => {
+      if (map.getLayer(id)) map.moveLayer(id);
+    });
+}
+
+/** pitch 下 3D 墙体容易遮挡地面路线，略微降低不透明度便于看见路径 */
+function softenExtrusionsForRoute(map) {
+  ['wall-1000-extrusion', 'blocker-100202-extrusion'].forEach((id) => {
+    if (map.getLayer(id)) {
+      map.setPaintProperty(id, 'fill-extrusion-opacity', 0.42);
+    }
+  });
+}
+
 function ensureUserPuckLayers(map) {
   if (!map.getSource('user-loc-source')) {
     map.addSource('user-loc-source', {
@@ -78,20 +117,54 @@ function ensureUserPuckLayers(map) {
 function ensureNavRouteLayers(map, routePoints) {
   if (!routePoints || routePoints.length < 2) return;
   const fullCoords = routePoints.map((p) => [p.longitude, p.latitude]);
-  const emptyLine = { type: 'Feature', geometry: { type: 'LineString', coordinates: [[0, 0], [0, 0]] } };
+  const fullLine = lineFeature(fullCoords);
+  const endPoint = {
+    type: 'Feature',
+    properties: {},
+    geometry: { type: 'Point', coordinates: fullCoords[fullCoords.length - 1] },
+  };
 
   if (!map.getSource('nav-route-source')) {
-    map.addSource('nav-route-source', { type: 'geojson', data: emptyLine });
-    map.addSource('nav-route-traveled-source', { type: 'geojson', data: emptyLine });
-    map.addSource('nav-route-remaining-source', { type: 'geojson', data: { type: 'Feature', geometry: { type: 'LineString', coordinates: fullCoords } } });
-    map.addSource('nav-route-end-source', { type: 'geojson', data: { type: 'Feature', geometry: { type: 'Point', coordinates: fullCoords[fullCoords.length - 1] } } });
-    map.addSource('nav-direction-arrows', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    const beforeId = routeStackBeforeId(map);
+    map.addSource('nav-route-source', { type: 'geojson', data: fullLine });
+    map.addSource('nav-route-traveled-source', { type: 'geojson', data: EMPTY_FC });
+    map.addSource('nav-route-remaining-source', { type: 'geojson', data: fullLine });
+    map.addSource('nav-route-end-source', { type: 'geojson', data: endPoint });
+    map.addSource('nav-direction-arrows', { type: 'geojson', data: EMPTY_FC });
 
-    map.addLayer({ id: 'nav-route-casing', type: 'line', source: 'nav-route-source', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#F7FBFF', 'line-width': 14, 'line-opacity': 0.98 } });
-    map.addLayer({ id: 'nav-route-traveled', type: 'line', source: 'nav-route-traveled-source', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#3E5060', 'line-width': 10, 'line-opacity': 0.9 } });
-    map.addLayer({ id: 'nav-route-line', type: 'line', source: 'nav-route-remaining-source', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#3E86EC', 'line-width': 10, 'line-opacity': 0.95 } });
-    map.addLayer({ id: 'nav-route-end-layer', type: 'circle', source: 'nav-route-end-source', paint: { 'circle-radius': 10, 'circle-color': '#ffffff', 'circle-stroke-color': '#3E86EC', 'circle-stroke-width': 3 } });
-    map.addLayer({
+    addRouteLineLayer(map, {
+      id: 'nav-route-casing',
+      type: 'line',
+      source: 'nav-route-source',
+      layout: ROUTE_LINE_LAYOUT,
+      paint: { 'line-color': '#F7FBFF', 'line-width': 14, 'line-opacity': 0.98 },
+    }, beforeId);
+    addRouteLineLayer(map, {
+      id: 'nav-route-traveled',
+      type: 'line',
+      source: 'nav-route-traveled-source',
+      layout: ROUTE_LINE_LAYOUT,
+      paint: { 'line-color': '#3E5060', 'line-width': 10, 'line-opacity': 0.9 },
+    }, beforeId);
+    addRouteLineLayer(map, {
+      id: 'nav-route-line',
+      type: 'line',
+      source: 'nav-route-remaining-source',
+      layout: ROUTE_LINE_LAYOUT,
+      paint: { 'line-color': '#3E86EC', 'line-width': 10, 'line-opacity': 0.95 },
+    }, beforeId);
+    addRouteLineLayer(map, {
+      id: 'nav-route-end-layer',
+      type: 'circle',
+      source: 'nav-route-end-source',
+      paint: {
+        'circle-radius': 10,
+        'circle-color': '#ffffff',
+        'circle-stroke-color': '#3E86EC',
+        'circle-stroke-width': 3,
+      },
+    }, beforeId);
+    addRouteLineLayer(map, {
       id: 'nav-direction-arrows-layer',
       type: 'symbol',
       source: 'nav-direction-arrows',
@@ -102,10 +175,16 @@ function ensureNavRouteLayers(map, routePoints) {
         'icon-rotation-alignment': 'map',
         'icon-allow-overlap': true,
       },
-    });
+    }, beforeId);
+
+    moveRouteLayersToTop(map);
+    softenExtrusionsForRoute(map);
   } else {
-    map.getSource('nav-route-remaining-source').setData({ type: 'Feature', geometry: { type: 'LineString', coordinates: fullCoords } });
-    map.getSource('nav-route-end-source').setData({ type: 'Feature', geometry: { type: 'Point', coordinates: fullCoords[fullCoords.length - 1] } });
+    map.getSource('nav-route-source').setData(fullLine);
+    map.getSource('nav-route-remaining-source').setData(fullLine);
+    map.getSource('nav-route-end-source').setData(endPoint);
+    moveRouteLayersToTop(map);
+    softenExtrusionsForRoute(map);
   }
 }
 
@@ -116,6 +195,7 @@ function buildDirectionArrows(routePoints, spacingM = 18) {
     const a = routePoints[i];
     const b = routePoints[i + 1];
     const segLen = Math.sqrt((b.latitude - a.latitude) ** 2 + (b.longitude - a.longitude) ** 2) * 111320;
+    if (segLen < 0.01) continue;
     const bearing = ((Math.atan2(b.longitude - a.longitude, b.latitude - a.latitude) * 180) / Math.PI + 360) % 360;
     while (acc >= 0) {
       const t = acc / segLen;
@@ -176,8 +256,11 @@ function updateRouteProgress(map, routePoints, progressPct) {
     acc += seg;
   }
   if (traveled.length < 2) traveled.push(...remaining.splice(0, 2));
-  map.getSource('nav-route-traveled-source').setData({ type: 'Feature', geometry: { type: 'LineString', coordinates: traveled.length >= 2 ? traveled : [[0, 0], [0, 0]] } });
-  map.getSource('nav-route-remaining-source').setData({ type: 'Feature', geometry: { type: 'LineString', coordinates: remaining.length >= 2 ? remaining : routePoints.map((p) => [p.longitude, p.latitude]) } });
+  const traveledSrc = map.getSource('nav-route-traveled-source');
+  const remainingSrc = map.getSource('nav-route-remaining-source');
+  if (!traveledSrc || !remainingSrc) return;
+  traveledSrc.setData(traveled.length >= 2 ? lineFeature(traveled) : EMPTY_FC);
+  remainingSrc.setData(remaining.length >= 2 ? lineFeature(remaining) : lineFeature(routePoints.map((p) => [p.longitude, p.latitude])));
 }
 
 function dist(a, b) {
