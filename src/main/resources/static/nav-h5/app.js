@@ -11,12 +11,15 @@ function getQuery() {
 
 const Q = getQuery();
 const TILES_BASE = Q.tiles_base || 'https://parkinglot.c-avp.com:9065/tiles';
-const MAP_ID = Q.map_id || 'ziguang_1-B2';
-const TILES_URL = `${TILES_BASE}/{z}/{x}/{y}.pbf?map_id=${MAP_ID}`;
+const MAP_ID = Q.map_id || 'gqyq';
+const TILES_USE_MAP_ID = Q.tiles_use_map_id !== '0';
+const TILES_URL = TILES_USE_MAP_ID
+  ? `${TILES_BASE}/{z}/{x}/{y}.pbf?map_id=${MAP_ID}`
+  : `${TILES_BASE}/{z}/{x}/{y}.pbf`;
 const MAP_BEARING = parseFloat(Q.map_bearing) || 0;
 const GEO_API = Q.geo_api || `https://parkinglot.c-avp.com:9065/api/maps/${MAP_ID}/geometry`;
 const ASSIGNMENT_API = Q.assignment_api || `https://parkinglot.c-avp.com:9065/api/avp/assignment`;
-const PUCK_API = (Q.puck_api || TILES_BASE.replace('/tiles', '/api/puck'));
+const PUCK_API = Q.puck_api || 'https://parkinglot.c-avp.com:9065/api/puck';
 const NAV_FLOW = Q.nav_flow || 'PARKING_ENTRY';
 const AUTO_START = Q.auto_start === '1';
 
