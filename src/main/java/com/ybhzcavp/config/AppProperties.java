@@ -43,11 +43,14 @@ public class AppProperties {
     }
 
     public static class Parking {
-        private double nearbyLng = 120.635716;
-        private double nearbyLat = 31.422788;
-        private int nearbyRadius = 5000;
-        private String defaultParkingId = "000003";
+        private double nearbyLng = 116.491829413;
+        private double nearbyLat = 39.729580309;
+        private int nearbyRadius = 15000;
+        private String defaultParkingId = "000002";
         private String vehicleId = "I1000110";
+        private String parkingSpaceNumber = "B117";
+        private double parkingLng = 116.4915732;
+        private double parkingLat = 39.7305491;
 
         public double getNearbyLng() {
             return nearbyLng;
@@ -87,6 +90,30 @@ public class AppProperties {
 
         public void setVehicleId(String vehicleId) {
             this.vehicleId = vehicleId;
+        }
+
+        public String getParkingSpaceNumber() {
+            return parkingSpaceNumber;
+        }
+
+        public void setParkingSpaceNumber(String parkingSpaceNumber) {
+            this.parkingSpaceNumber = parkingSpaceNumber;
+        }
+
+        public double getParkingLng() {
+            return parkingLng;
+        }
+
+        public void setParkingLng(double parkingLng) {
+            this.parkingLng = parkingLng;
+        }
+
+        public double getParkingLat() {
+            return parkingLat;
+        }
+
+        public void setParkingLat(double parkingLat) {
+            this.parkingLat = parkingLat;
         }
     }
 

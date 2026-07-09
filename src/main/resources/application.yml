@@ -13,11 +13,14 @@ app:
   data-dir: ${DATA_DIR:./data}
   osmandroid-assets: ${OSMANDROID_ASSETS:F:/osmandroid/OsmAndroidDemo/app/build/generated/assets/osm}
   parking:
-    nearby-lng: 120.635716
-    nearby-lat: 31.422788
-    nearby-radius: 5000
-    default-parking-id: "000003"
+    nearby-lng: 116.491829413
+    nearby-lat: 39.729580309
+    nearby-radius: 15000
+    default-parking-id: "000002"
     vehicle-id: I1000110
+    parking-space-number: B117
+    parking-lng: 116.4915732
+    parking-lat: 39.7305491
   navigation:
     arrival-meters: 8.0
     walk-speed-mps: 1.15

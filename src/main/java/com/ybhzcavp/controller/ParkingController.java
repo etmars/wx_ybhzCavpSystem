@@ -2,6 +2,7 @@ package com.ybhzcavp.controller;
 
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.ybhzcavp.service.AvpDispatchService;
 import com.ybhzcavp.service.ParkingService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -16,9 +17,11 @@ import java.util.Map;
 public class ParkingController {
 
     private final ParkingService parkingService;
+    private final AvpDispatchService avpDispatchService;
 
-    public ParkingController(ParkingService parkingService) {
+    public ParkingController(ParkingService parkingService, AvpDispatchService avpDispatchService) {
         this.parkingService = parkingService;
+        this.avpDispatchService = avpDispatchService;
     }
 
     @GetMapping("/api/nearby")
@@ -47,6 +50,20 @@ public class ParkingController {
     @PostMapping("/avp/sub")
     public ResponseEntity<Map<String, String>> avpSub(@RequestBody(required = false) Map<String, Object> body) {
         return ResponseEntity.ok(Map.of("status", "ok"));
+    }
+
+    @PostMapping("/avp/event")
+    public ResponseEntity<Map<String, String>> avpEvent(@RequestBody Map<String, Object> body) {
+        Object vehicleId = body.get("vehicleId");
+        if (vehicleId != null) {
+            avpDispatchService.handleEvent(String.valueOf(vehicleId), body);
+        }
+        return ResponseEntity.ok(Map.of("status", "ok"));
+    }
+
+    @GetMapping("/avp/groute")
+    public ObjectNode groute(@RequestParam String vehicleId) {
+        return avpDispatchService.getGroute(vehicleId);
     }
 
     @GetMapping("/api/avp/assignment")

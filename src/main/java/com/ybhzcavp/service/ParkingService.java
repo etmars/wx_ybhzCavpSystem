@@ -58,7 +58,7 @@ public class ParkingService {
         lot.put("distance_m", 86.0);
         lot.put("emptySpots", 12408);
         lot.put("totalSpots", 20000);
-        lot.put("price", "¥5/h");
+        lot.put("price", "¥6/h");
         lot.put("WGS84", lng + "," + lat);
         lot.putArray("features").add("充电桩");
         ArrayNode floors = lot.putArray("floors");
@@ -83,7 +83,8 @@ public class ParkingService {
         MapDataService.MapEntry map = mapDataService.resolveMap("ziguang_1-B2");
         ObjectNode item = MAPPER.createObjectNode();
         item.put("map_file", map != null ? map.name() : "紫光大厦/1-B2");
-        item.put("to_coords", "出口A,B2,0.1349,-0.0086|出口B,B1,0.1350,-0.0087");
+        item.put("to_coords",
+                "南出入口,B2,0.134945,-0.008649,18.488|北出入口,B1,0.135200,-0.008500,18.200");
         arr.add(item);
         return arr;
     }
