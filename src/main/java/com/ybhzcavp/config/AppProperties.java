@@ -51,6 +51,16 @@ public class AppProperties {
         private String parkingSpaceNumber = "B117";
         private double parkingLng = 116.4915732;
         private double parkingLat = 39.7305491;
+        /** 对齐 Android PARKING_API_BASE_URL，H5 groute 代理转发目标 */
+        private String apiBaseUrl = "http://parkinglot.c-avp.com:3000";
+
+        public String getApiBaseUrl() {
+            return apiBaseUrl;
+        }
+
+        public void setApiBaseUrl(String apiBaseUrl) {
+            this.apiBaseUrl = apiBaseUrl;
+        }
 
         public double getNearbyLng() {
             return nearbyLng;

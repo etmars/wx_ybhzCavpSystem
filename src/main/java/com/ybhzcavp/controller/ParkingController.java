@@ -3,6 +3,7 @@ package com.ybhzcavp.controller;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.ybhzcavp.service.AvpDispatchService;
+import com.ybhzcavp.service.GrouteProxyService;
 import com.ybhzcavp.service.ParkingService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -18,10 +19,13 @@ public class ParkingController {
 
     private final ParkingService parkingService;
     private final AvpDispatchService avpDispatchService;
+    private final GrouteProxyService grouteProxyService;
 
-    public ParkingController(ParkingService parkingService, AvpDispatchService avpDispatchService) {
+    public ParkingController(ParkingService parkingService, AvpDispatchService avpDispatchService,
+                             GrouteProxyService grouteProxyService) {
         this.parkingService = parkingService;
         this.avpDispatchService = avpDispatchService;
+        this.grouteProxyService = grouteProxyService;
     }
 
     @GetMapping("/api/nearby")
@@ -64,6 +68,12 @@ public class ParkingController {
     @GetMapping("/avp/groute")
     public ObjectNode groute(@RequestParam String vehicleId) {
         return avpDispatchService.getGroute(vehicleId);
+    }
+
+    /** H5 同源拉取 :3000 实时 groute（与 Home 页预览一致） */
+    @GetMapping("/api/avp/groute-live")
+    public ResponseEntity<byte[]> grouteLive(@RequestParam String vehicleId) {
+        return grouteProxyService.fetchLiveGroute(vehicleId);
     }
 
     @GetMapping("/api/avp/assignment")

@@ -22,6 +22,7 @@ app:
     parking-space-number: B117
     parking-lng: 116.4915732
     parking-lat: 39.7305491
+    api-base-url: http://parkinglot.c-avp.com:3000
   navigation:
     arrival-meters: 8.0
     walk-speed-mps: 1.15

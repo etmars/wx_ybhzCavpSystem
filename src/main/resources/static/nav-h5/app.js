@@ -18,7 +18,8 @@ const TILES_URL = TILES_USE_MAP_ID
   : `${TILES_BASE}/{z}/{x}/{y}.pbf`;
 const MAP_BEARING = parseFloat(Q.map_bearing) || 0;
 const GEO_API = Q.geo_api || `https://parkinglot.c-avp.com:9065/api/maps/${MAP_ID}/geometry`;
-const ROUTE_API = Q.route_api || `https://parkinglot.c-avp.com:9065/api/nav/route`;
+const GROUTE_API = Q.groute_api || 'https://parkinglot.c-avp.com:9065/api/avp/groute-live';
+const VEHICLE_ID = Q.vehicle_id || 'I1000110';
 const ASSIGNMENT_API = Q.assignment_api || `https://parkinglot.c-avp.com:9065/api/avp/assignment`;
 const PUCK_API = Q.puck_api || 'https://parkinglot.c-avp.com:9065/api/puck';
 const NAV_FLOW = Q.nav_flow || 'PARKING_ENTRY';
@@ -152,22 +153,26 @@ function parseRouteFromQuery() {
   }
 }
 
-async function loadRouteFromSession() {
-  if (!SESSION_ID || SESSION_ID === 'default') return false;
+async function loadRouteFromGroute() {
+  if (!GROUTE_API || !VEHICLE_ID) return false;
   try {
-    const res = await fetch(`${ROUTE_API}?sessionId=${encodeURIComponent(SESSION_ID)}`);
-    const data = await res.json();
-    if (!data.ok || !Array.isArray(data.pointsPos) || !data.pointsPos.length) return false;
-    if (data.spaceId) {
+    const res = await fetch(`${GROUTE_API}?vehicleId=${encodeURIComponent(VEHICLE_ID)}`);
+    const root = await res.json();
+    const info = (root && root.infoData) || {};
+    const pathList = info.pathList || [];
+    const pointsPos = (pathList[0] && pathList[0].pointsPos) || [];
+    if (!Array.isArray(pointsPos) || !pointsPos.length) return false;
+    if (info.spaceId) {
       SPOT_TITLE = NAV_FLOW === 'PICKUP_EXIT'
-        ? `目标出口 ${data.spaceId}`
-        : `目标车位 ${data.spaceId}`;
+        ? `目标出口 ${info.spaceId}`
+        : `目标车位 ${info.spaceId}`;
     }
-    if (data.totalLen) TOTAL_LEN = data.totalLen;
-    if (data.estTotalTime) ETA_SECONDS = data.estTotalTime;
-    return applyRoutePoints(data.pointsPos);
+    if (info.totalLen != null && !TOTAL_LEN) TOTAL_LEN = info.totalLen;
+    if (info.estTotalTime != null && !ETA_SECONDS) ETA_SECONDS = info.estTotalTime;
+    remainMeters = TOTAL_LEN;
+    return applyRoutePoints(pointsPos);
   } catch (e) {
-    console.warn('session route failed', e);
+    console.warn('groute failed', e);
     return false;
   }
 }
@@ -223,10 +228,8 @@ async function initMap() {
     MapLayers.ensureUserPuckLayers(map);
 
     let hasRoute = parseRouteFromQuery();
-    if (!hasRoute) hasRoute = await loadRouteFromSession();
-    if (!hasRoute && (!SESSION_ID || SESSION_ID === 'default')) {
-      await loadAssignmentFallback();
-    }
+    if (!hasRoute) hasRoute = await loadRouteFromGroute();
+    if (!hasRoute) await loadAssignmentFallback();
 
     MapLayers.ensureNavRouteLayers(map, routePoints);
     const arrows = MapLayers.buildDirectionArrows(routePoints);
