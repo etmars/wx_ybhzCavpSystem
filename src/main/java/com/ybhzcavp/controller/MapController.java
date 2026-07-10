@@ -86,6 +86,12 @@ public class MapController {
                 .body(body);
     }
 
+    @GetMapping("/api/maps/{mapId}/label-index")
+    public Map<String, String> labelIndex(@PathVariable String mapId) {
+        MapDataService.MapEntry map = mapDataService.resolveMap(mapId);
+        return mbtilesService.loadLabelIndex(map);
+    }
+
     @GetMapping("/api/maps/{mapId}/wall_grid.bin")
     public ResponseEntity<byte[]> wallGrid(@PathVariable String mapId) throws java.io.IOException {
         java.nio.file.Path path = mapDataService.resolveWallGrid(mapId);

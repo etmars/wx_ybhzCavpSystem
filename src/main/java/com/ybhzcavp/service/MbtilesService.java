@@ -15,6 +15,7 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -59,6 +60,32 @@ public class MbtilesService {
             log.warn("tile serve failed z={} x={} y={}: {}", z, x, y, e.getMessage());
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body("tile not found".getBytes());
         }
+    }
+
+    public Map<String, String> loadLabelIndex(MapDataService.MapEntry map) {
+        Map<String, String> out = new LinkedHashMap<>();
+        if (map == null || !Files.exists(map.mbtilesFile())) {
+            return out;
+        }
+        try {
+            Connection conn = connections.computeIfAbsent(map.id(), id -> open(map.mbtilesFile()));
+            if (conn == null) {
+                return out;
+            }
+            try (PreparedStatement ps = conn.prepareStatement("SELECT icon_id, label FROM label_index");
+                 ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    String iconId = rs.getString(1);
+                    String label = rs.getString(2);
+                    if (iconId != null && label != null) {
+                        out.put(iconId, label);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("loadLabelIndex failed for {}: {}", map != null ? map.id() : "?", e.getMessage());
+        }
+        return out;
     }
 
     private Connection open(Path mbtiles) {

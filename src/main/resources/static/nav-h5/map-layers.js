@@ -1,4 +1,4 @@
-/** 对齐 Android addRenderLayers / ensureNavRouteLayers / highlightTargetSpace */
+/** 对齐 Android addRenderLayers / ensureNavRouteLayers / ensureUserLocationLayers */
 
 function addExtraStyleLayers(style) {
   if (!style.layers.some((l) => l.id === 'poi-layer')) {
@@ -9,7 +9,14 @@ function addExtraStyleLayers(style) {
       'source-layer': 'poi',
       layout: {
         'icon-image': ['concat', 'poi-', ['get', 'sType']],
-        'icon-size': 0.9,
+        // 对齐 Android poi iconSize 插值，H5 再缩小一档
+        'icon-size': [
+          'interpolate', ['linear'], ['zoom'],
+          16, 0.45,
+          18, 0.55,
+          20, 0.65,
+          22, 0.75,
+        ],
         'icon-allow-overlap': true,
         'icon-ignore-placement': true,
       },
@@ -23,7 +30,7 @@ function addExtraStyleLayers(style) {
       'source-layer': 'parking_label',
       layout: {
         'icon-image': ['get', 'icon_id'],
-        'icon-size': 0.72,
+        'icon-size': 0.22,
         'icon-allow-overlap': true,
         'icon-ignore-placement': true,
       },
@@ -41,38 +48,89 @@ function lineFeature(coords) {
 
 const EMPTY_FC = { type: 'FeatureCollection', features: [] };
 
-/** 对齐 Android：路线插在 parking-edge 之上、坡道层之下 */
-function routeStackBeforeId(map) {
-  if (map.getLayer('road-2005-ramp-fill')) return 'road-2005-ramp-fill';
-  if (map.getLayer('parking-edge')) return 'parking-edge';
-  if (map.getLayer('parking-label')) return 'parking-label';
-  return undefined;
-}
-
-const ROUTE_LINE_LAYOUT = { 'line-cap': 'round', 'line-join': 'round' };
-
-function addRouteLineLayer(map, layer, beforeId) {
-  try {
-    map.addLayer(layer, beforeId);
-  } catch (e) {
-    console.warn('addRouteLineLayer fallback', layer.id, e);
+/** MapLibre GL JS 等价 Android Style.addLayerAbove */
+function addLayerAbove(map, layer, aboveId) {
+  if (!aboveId || !map.getLayer(aboveId)) {
     map.addLayer(layer);
+    return;
+  }
+  const layers = map.getStyle().layers;
+  const idx = layers.findIndex((l) => l.id === aboveId);
+  if (idx < 0 || idx >= layers.length - 1) {
+    map.addLayer(layer);
+  } else {
+    map.addLayer(layer, layers[idx + 1].id);
   }
 }
 
-/** puck 必须在 parking-label 之上（Android ensureUserLocationLayers） */
-function puckStackBeforeId(map) {
-  if (map.getLayer('parking-label')) return 'parking-label';
-  return undefined;
+function moveLayerAbove(map, layerId, aboveId) {
+  if (!map.getLayer(layerId) || !map.getLayer(aboveId)) return;
+  const layers = map.getStyle().layers;
+  const idx = layers.findIndex((l) => l.id === aboveId);
+  if (idx < 0) return;
+  if (idx >= layers.length - 1) {
+    try { map.moveLayer(layerId); } catch (e) { /* ignore */ }
+  } else {
+    try { map.moveLayer(layerId, layers[idx + 1].id); } catch (e) { /* ignore */ }
+  }
+}
+
+/** 路线箭头 icon-size — 64px 位图在 10px 线宽上需缩小 */
+const NAV_ROUTE_ARROW_ICON_SIZE = 0.38;
+
+const ROUTE_LINE_LAYOUT = { 'line-cap': 'round', 'line-join': 'round' };
+/** 已走段线帽：butt 避免 round cap 向前伸出到光晕内 */
+const ROUTE_TRAVELED_LAYOUT = { 'line-cap': 'butt', 'line-join': 'round' };
+const ROUTE_REMAINING_LAYOUT = ROUTE_LINE_LAYOUT;
+
+/** 灰线切分点退后距离 ≈ 光晕半径 + 线宽一半，避免圆球前方透出灰色 */
+function routeTraveledTrimMeters(map) {
+  if (!map) return 3;
+  const z = map.getZoom();
+  const lat = map.getCenter().lat * Math.PI / 180;
+  const metersPerPx = (156543.03392 * Math.cos(lat)) / (2 ** z);
+  return (22 + 6) * metersPerPx;
+}
+
+/** 路线必须在 arrow-1001-fill(sType=1001) 之上，顺序对齐 ensureNavLayers + renderPreplannedRoute */
+function restackNavRouteLayers(map) {
+  if (!map.getLayer('arrow-1001-fill')) return;
+  [
+    ['nav-route-casing', 'arrow-1001-fill'],
+    ['nav-route-traveled', 'nav-route-casing'],
+    ['nav-route-line', 'nav-route-traveled'],
+    ['nav-route-end-layer', 'nav-route-line'],
+    ['nav-direction-arrows-layer', 'nav-route-line'],
+  ].forEach(([layerId, aboveId]) => moveLayerAbove(map, layerId, aboveId));
+}
+
+function restackUserPuckLayers(map) {
+  if (!map.getLayer('parking-label')) return;
+  // 对齐 Android：halo → 光束 → 实心圆点（core 盖住锥体根部，向前扇形仍可见）
+  [
+    ['user-loc-halo', 'parking-label'],
+    ['user-loc-heading-layer', 'user-loc-halo'],
+    ['user-loc-layer', 'user-loc-heading-layer'],
+  ].forEach(([layerId, aboveId]) => moveLayerAbove(map, layerId, aboveId));
 }
 
 function ensureUserPuckOnTop(map) {
+  restackUserPuckLayers(map);
+  restackNavRouteLayers(map);
   ['user-loc-halo', 'user-loc-heading-layer', 'user-loc-layer'].forEach((id) => {
     if (map.getLayer(id)) {
       try { map.moveLayer(id); } catch (e) { /* ignore */ }
     }
   });
 }
+
+const PUCK_HALO_COLOR = 'rgba(62, 134, 236, 0.2)'; // Android puck_halo #333E86EC (AARRGGBB)
+/** 与 Android iconSize(1.18f) 一致；pitch 用 viewport 时视觉长度才与圆点对齐 */
+const USER_HEADING_ICON_SIZE = 1.18;
+const PUCK_CIRCLE_PAINT = {
+  'circle-pitch-alignment': 'viewport',
+  'circle-pitch-scale': 'map',
+};
 
 function ensureUserPuckLayers(map, seedLngLat, seedBearing) {
   const coords = seedLngLat || [0, 0];
@@ -87,38 +145,42 @@ function ensureUserPuckLayers(map, seedLngLat, seedBearing) {
   } else {
     map.getSource('user-loc-source').setData(seed);
   }
-  const beforeId = puckStackBeforeId(map);
+
+  // 对齐 ensureUserLocationLayers：halo → heading 光束 → 实心圆点
   if (!map.getLayer('user-loc-halo')) {
-    const layer = {
+    addLayerAbove(map, {
       id: 'user-loc-halo',
       type: 'circle',
       source: 'user-loc-source',
-      paint: { 'circle-radius': 22, 'circle-color': '#3E86EC', 'circle-opacity': 0.2 },
-    };
-    if (beforeId) addRouteLineLayer(map, layer, beforeId);
-    else map.addLayer(layer);
+      paint: {
+        'circle-radius': 22,
+        'circle-color': PUCK_HALO_COLOR,
+        'circle-opacity': 1,
+        'circle-stroke-width': 0,
+        ...PUCK_CIRCLE_PAINT,
+      },
+    }, 'parking-label');
   }
   if (!map.getLayer('user-loc-heading-layer')) {
-    const layer = {
+    addLayerAbove(map, {
       id: 'user-loc-heading-layer',
       type: 'symbol',
       source: 'user-loc-source',
       layout: {
         'icon-image': 'user-loc-heading',
-        'icon-size': 1.18,
+        'icon-size': USER_HEADING_ICON_SIZE,
+        'icon-anchor': 'center',
         'icon-rotate': ['get', 'bearing'],
-        'icon-rotation-alignment': 'map',
-        'icon-pitch-alignment': 'map',
+        'icon-rotation-alignment': 'viewport',
+        // 与 circle 层同为 viewport，俯仰角下光束起点才能与圆点中心重合
+        'icon-pitch-alignment': 'viewport',
         'icon-allow-overlap': true,
         'icon-ignore-placement': true,
       },
-    };
-    if (map.getLayer('user-loc-halo')) addRouteLineLayer(map, layer, 'user-loc-halo');
-    else if (beforeId) addRouteLineLayer(map, layer, beforeId);
-    else map.addLayer(layer);
+    }, 'user-loc-halo');
   }
   if (!map.getLayer('user-loc-layer')) {
-    const layer = {
+    addLayerAbove(map, {
       id: 'user-loc-layer',
       type: 'circle',
       source: 'user-loc-source',
@@ -127,11 +189,25 @@ function ensureUserPuckLayers(map, seedLngLat, seedBearing) {
         'circle-color': '#3E86EC',
         'circle-stroke-color': '#ffffff',
         'circle-stroke-width': 3,
+        'circle-opacity': 1,
+        ...PUCK_CIRCLE_PAINT,
       },
-    };
-    if (map.getLayer('user-loc-heading-layer')) addRouteLineLayer(map, layer, 'user-loc-heading-layer');
-    else if (beforeId) addRouteLineLayer(map, layer, beforeId);
-    else map.addLayer(layer);
+    }, 'user-loc-heading-layer');
+  }
+  if (map.getLayer('user-loc-halo')) {
+    map.setPaintProperty('user-loc-halo', 'circle-color', PUCK_HALO_COLOR);
+    map.setPaintProperty('user-loc-halo', 'circle-pitch-alignment', 'viewport');
+  }
+  if (map.getLayer('user-loc-layer')) {
+    map.setPaintProperty('user-loc-layer', 'circle-pitch-alignment', 'viewport');
+  }
+  if (!map.hasImage('user-loc-heading') && window.MapLayersUtil?.registerUserHeadingIcon) {
+    window.MapLayersUtil.registerUserHeadingIcon(map);
+  }
+  if (map.getLayer('user-loc-heading-layer')) {
+    map.setLayoutProperty('user-loc-heading-layer', 'icon-pitch-alignment', 'viewport');
+    map.setLayoutProperty('user-loc-heading-layer', 'icon-rotation-alignment', 'viewport');
+    map.setLayoutProperty('user-loc-heading-layer', 'icon-size', USER_HEADING_ICON_SIZE);
   }
   ensureUserPuckOnTop(map);
 }
@@ -147,55 +223,58 @@ function ensureNavRouteLayers(map, routePoints) {
   };
 
   if (!map.getSource('nav-route-source')) {
-    const beforeId = routeStackBeforeId(map);
     map.addSource('nav-route-source', { type: 'geojson', data: fullLine });
     map.addSource('nav-route-traveled-source', { type: 'geojson', data: EMPTY_FC });
     map.addSource('nav-route-remaining-source', { type: 'geojson', data: fullLine });
     map.addSource('nav-route-end-source', { type: 'geojson', data: endPoint });
     map.addSource('nav-direction-arrows', { type: 'geojson', data: EMPTY_FC });
 
-    addRouteLineLayer(map, {
+    const routeBase = map.getLayer('arrow-1001-fill') ? 'arrow-1001-fill' : 'parking-edge';
+    addLayerAbove(map, {
       id: 'nav-route-casing',
       type: 'line',
       source: 'nav-route-source',
       layout: ROUTE_LINE_LAYOUT,
       paint: { 'line-color': '#F7FBFF', 'line-width': 14, 'line-opacity': 0.98 },
-    }, beforeId);
-    addRouteLineLayer(map, {
+    }, routeBase);
+    addLayerAbove(map, {
       id: 'nav-route-traveled',
       type: 'line',
       source: 'nav-route-traveled-source',
-      layout: ROUTE_LINE_LAYOUT,
-      paint: { 'line-color': '#3E5060', 'line-width': 10, 'line-opacity': 0.9 },
+      layout: ROUTE_TRAVELED_LAYOUT,
+      paint: { 'line-color': 'rgba(62, 80, 96, 0.6)', 'line-width': 10, 'line-opacity': 1 },
     }, 'nav-route-casing');
-    addRouteLineLayer(map, {
+    addLayerAbove(map, {
       id: 'nav-route-line',
       type: 'line',
       source: 'nav-route-remaining-source',
-      layout: ROUTE_LINE_LAYOUT,
-      paint: { 'line-color': '#3E86EC', 'line-width': 10, 'line-opacity': 0.95 },
+      layout: ROUTE_REMAINING_LAYOUT,
+      paint: { 'line-color': '#3E86EC', 'line-width': 10, 'line-opacity': 1 },
     }, 'nav-route-traveled');
-    addRouteLineLayer(map, {
+    addLayerAbove(map, {
       id: 'nav-route-end-layer',
       type: 'circle',
       source: 'nav-route-end-source',
       paint: {
-        'circle-radius': 10,
+        'circle-radius': 0,
         'circle-color': '#ffffff',
         'circle-stroke-color': '#3E86EC',
-        'circle-stroke-width': 3,
+        'circle-stroke-width': 0,
+        'circle-opacity': 0,
       },
     }, 'nav-route-line');
-    addRouteLineLayer(map, {
+    addLayerAbove(map, {
       id: 'nav-direction-arrows-layer',
       type: 'symbol',
       source: 'nav-direction-arrows',
       layout: {
         'icon-image': 'nav-arrow-icon',
-        'icon-size': 0.45,
+        'icon-size': NAV_ROUTE_ARROW_ICON_SIZE,
         'icon-rotate': ['get', 'bearing'],
         'icon-rotation-alignment': 'map',
+        'icon-pitch-alignment': 'map',
         'icon-allow-overlap': true,
+        'icon-ignore-placement': true,
       },
     }, 'nav-route-line');
   } else {
@@ -203,34 +282,68 @@ function ensureNavRouteLayers(map, routePoints) {
     map.getSource('nav-route-remaining-source').setData(fullLine);
     map.getSource('nav-route-end-source').setData(endPoint);
   }
+  restackNavRouteLayers(map);
+  updateDirectionArrows(map, routePoints);
+  updateNavRouteArrowIconSize(map);
+  if (map.getLayer('nav-route-traveled')) {
+    map.setLayoutProperty('nav-route-traveled', 'line-cap', 'butt');
+  }
   ensureUserPuckOnTop(map);
 }
 
-function buildDirectionArrows(routePoints, spacingM = 18) {
+/** 对齐 updateParkingLabelSizeByZoom，H5 web-view 略小于 Android 但比旧版稍大 */
+function updateParkingLabelSizeByZoom(map) {
+  if (!map || !map.getLayer('parking-label')) return;
+  const z = map.getZoom();
+  const minZoom = 16;
+  const maxZoom = 20;
+  const minSize = 0.28;
+  const maxSize = 0.46;
+  const t = Math.max(0, Math.min(1, (z - minZoom) / (maxZoom - minZoom)));
+  const size = minSize + (maxSize - minSize) * t;
+  map.setLayoutProperty('parking-label', 'icon-size', size);
+}
+
+function updateNavRouteArrowIconSize(map) {
+  if (!map || !map.getLayer('nav-direction-arrows-layer')) return;
+  map.setLayoutProperty('nav-direction-arrows-layer', 'icon-size', NAV_ROUTE_ARROW_ICON_SIZE);
+}
+
+/** 对齐 MainActivity.renderPreplannedRoute */
+function buildDirectionArrows(routePoints, maxArrows = 14) {
   const features = [];
-  let acc = 0;
-  for (let i = 0; i < routePoints.length - 1; i += 1) {
-    const a = routePoints[i];
-    const b = routePoints[i + 1];
-    const segLen = Math.sqrt((b.latitude - a.latitude) ** 2 + (b.longitude - a.longitude) ** 2) * 111320;
-    if (segLen < 0.01) continue;
-    const bearing = ((Math.atan2(b.longitude - a.longitude, b.latitude - a.latitude) * 180) / Math.PI + 360) % 360;
-    while (acc >= 0) {
-      const t = acc / segLen;
-      if (t > 1) break;
-      features.push({
-        type: 'Feature',
-        geometry: {
-          type: 'Point',
-          coordinates: [a.longitude + (b.longitude - a.longitude) * t, a.latitude + (b.latitude - a.latitude) * t],
-        },
-        properties: { bearing },
-      });
-      acc -= spacingM;
-    }
-    acc += segLen;
+  if (!routePoints || routePoints.length < 2) return features;
+  const G = window.NavGeo;
+  const stepCount = Math.min(maxArrows, routePoints.length - 1);
+  for (let k = 1; k < stepCount; k += 1) {
+    const idx = Math.min(
+      routePoints.length - 2,
+      Math.floor((k * (routePoints.length - 1)) / stepCount),
+    );
+    const a = routePoints[idx];
+    const b = routePoints[idx + 1];
+    features.push({
+      type: 'Feature',
+      geometry: {
+        type: 'Point',
+        coordinates: [
+          (a.longitude + b.longitude) / 2,
+          (a.latitude + b.latitude) / 2,
+        ],
+      },
+      properties: { bearing: G.bearingDegrees(a, b) },
+    });
   }
   return features;
+}
+
+function updateDirectionArrows(map, routePoints) {
+  if (!map || !map.getSource('nav-direction-arrows')) return;
+  const pts = Array.isArray(routePoints) ? routePoints : [];
+  map.getSource('nav-direction-arrows').setData({
+    type: 'FeatureCollection',
+    features: buildDirectionArrows(pts),
+  });
 }
 
 function highlightTargetSpace(map, spaceId) {
@@ -247,7 +360,6 @@ function highlightTargetSpace(map, spaceId) {
   }, 'parking-fill');
 }
 
-/** 终点 P 牌 — 对齐 Android ensureNavDestPinLayer */
 function ensureDestPinLayer(map, destination, spaceId) {
   if (!map || !destination) return;
   const label = spaceId || '';
@@ -259,8 +371,7 @@ function ensureDestPinLayer(map, destination, spaceId) {
   };
   if (!map.getSource('nav-dest-pin-source')) {
     map.addSource('nav-dest-pin-source', { type: 'geojson', data: feature });
-    const beforeId = map.getLayer('nav-route-end-layer') ? 'nav-route-end-layer' : undefined;
-    const layer = {
+    addLayerAbove(map, {
       id: 'nav-dest-pin-layer',
       type: 'symbol',
       source: 'nav-dest-pin-source',
@@ -271,9 +382,7 @@ function ensureDestPinLayer(map, destination, spaceId) {
         'icon-allow-overlap': true,
         'icon-ignore-placement': true,
       },
-    };
-    if (beforeId) addRouteLineLayer(map, layer, beforeId);
-    else map.addLayer(layer);
+    }, 'parking-label');
     if (map.getLayer('nav-route-end-layer')) {
       map.setLayoutProperty('nav-route-end-layer', 'visibility', 'none');
     }
@@ -285,55 +394,69 @@ function ensureDestPinLayer(map, destination, spaceId) {
 
 function updateRouteProgressByMeters(map, routePoints, traveledMeters, metrics) {
   if (!map || routePoints.length < 2) return;
-  const m = metrics || window.NavGeo.buildRouteMetrics(routePoints);
+  const G = window.NavGeo;
+  const m = metrics || G.buildRouteMetrics(routePoints);
   const total = m.total;
   if (total <= 0) return;
-  const traveledLen = Math.max(0, Math.min(traveledMeters, total));
-  let acc = 0;
+  const clamped = Math.max(0, Math.min(traveledMeters, total));
+  const trimM = routeTraveledTrimMeters(map);
+  const traveledSplit = Math.max(0, clamped - trimM);
+  const splitPt = G.pointAtRouteDistance(routePoints, traveledSplit, m);
+  if (!splitPt) return;
+
   const traveled = [];
   const remaining = [];
-  for (let i = 0; i < routePoints.length - 1; i += 1) {
-    const a = routePoints[i];
-    const b = routePoints[i + 1];
-    const seg = window.NavGeo.distanceMeters(a, b);
-    if (acc + seg <= traveledLen) {
-      traveled.push([a.longitude, a.latitude]);
-      if (acc + seg === traveledLen || i === routePoints.length - 2) traveled.push([b.longitude, b.latitude]);
-    } else if (acc < traveledLen) {
-      const t = (traveledLen - acc) / seg;
-      const mx = a.longitude + (b.longitude - a.longitude) * t;
-      const my = a.latitude + (b.latitude - a.latitude) * t;
-      traveled.push([a.longitude, a.latitude], [mx, my]);
-      remaining.push([mx, my], [b.longitude, b.latitude]);
+  let inserted = false;
+  for (let i = 0; i < routePoints.length; i += 1) {
+    const cum = m.cumulative[i] || 0;
+    const p = routePoints[i];
+    if (cum < traveledSplit - 1e-6) {
+      traveled.push([p.longitude, p.latitude]);
     } else {
-      remaining.push([a.longitude, a.latitude], [b.longitude, b.latitude]);
+      if (!inserted) {
+        traveled.push([splitPt.longitude, splitPt.latitude]);
+        remaining.push([splitPt.longitude, splitPt.latitude]);
+        inserted = true;
+      }
+      remaining.push([p.longitude, p.latitude]);
     }
-    acc += seg;
   }
-  if (traveled.length < 2 && remaining.length >= 2) traveled.push(...remaining.splice(0, 2));
+  if (!inserted) {
+    traveled.length = 0;
+    routePoints.forEach((p) => traveled.push([p.longitude, p.latitude]));
+    const last = routePoints[routePoints.length - 1];
+    remaining.length = 0;
+    remaining.push([last.longitude, last.latitude]);
+  }
+
   const traveledSrc = map.getSource('nav-route-traveled-source');
   const remainingSrc = map.getSource('nav-route-remaining-source');
   if (!traveledSrc || !remainingSrc) return;
   traveledSrc.setData(traveled.length >= 2 ? lineFeature(traveled) : EMPTY_FC);
   remainingSrc.setData(remaining.length >= 2 ? lineFeature(remaining) : lineFeature(routePoints.map((p) => [p.longitude, p.latitude])));
+  if (remaining.length >= 2) {
+    const remainingPts = remaining.map(([lon, lat]) => ({ longitude: lon, latitude: lat }));
+    updateDirectionArrows(map, remainingPts);
+  } else {
+    updateDirectionArrows(map, routePoints);
+  }
 }
 
-/** 兼容旧百分比 API */
 function updateRouteProgress(map, routePoints, progressPct) {
   const m = window.NavGeo.buildRouteMetrics(routePoints);
   updateRouteProgressByMeters(map, routePoints, (progressPct / 100) * m.total, m);
 }
 
-function dist(a, b) {
-  return window.NavGeo.distanceMeters(a, b);
-}
-
 window.MapLayers = {
   addExtraStyleLayers,
+  addLayerAbove,
   ensureUserPuckLayers,
   ensureUserPuckOnTop,
   ensureNavRouteLayers,
   buildDirectionArrows,
+  updateDirectionArrows,
+  updateParkingLabelSizeByZoom,
+  updateNavRouteArrowIconSize,
   highlightTargetSpace,
   ensureDestPinLayer,
   updateRouteProgress,

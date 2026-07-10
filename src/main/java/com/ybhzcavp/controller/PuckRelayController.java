@@ -4,6 +4,8 @@ package com.ybhzcavp.controller;
 
 import java.util.LinkedHashMap;
 
+import java.util.List;
+
 import java.util.Map;
 
 import java.util.concurrent.ConcurrentHashMap;
@@ -23,12 +25,22 @@ import org.springframework.web.bind.annotation.RestController;
 
 
 @RestController
-
+/** @deprecated 定位已改小程序 Hash 通道本地传递，不再使用 puck 中继 */
 public class PuckRelayController {
 
 
 
     private static final long TTL_MS = 10_000L;
+
+
+
+    private static final List<String> SENSOR_KEYS = List.of(
+
+            "gyroDegS", "gyroVar", "accelNorm", "accelHp", "imuSpd", "knnSpd", "routeSpd", "imuHp",
+
+            "gameBearing", "offsetCal", "gameOnly", "magNorm", "magBearingDeg", "magNe", "trulyStill");
+
+
 
     private final Map<String, PuckEntry> store = new ConcurrentHashMap<>();
 
@@ -36,49 +48,61 @@ public class PuckRelayController {
 
     @PostMapping("/api/puck")
 
-    public Map<String, Object> postPuck(@RequestBody PuckRequest req) {
+    public Map<String, Object> postPuck(@RequestBody Map<String, Object> raw) {
 
-        String key = key(req.mapId(), req.sessionId());
+        String mapId = asString(raw.get("mapId"));
 
-        long ts = req.ts() != null && req.ts() > 0 ? req.ts() : System.currentTimeMillis();
+        String sessionId = asString(raw.get("sessionId"));
+
+        double lat = asDouble(raw.get("latitude"));
+
+        double lon = asDouble(raw.get("longitude"));
+
+        long ts = asLong(raw.get("ts"));
+
+        if (ts <= 0) ts = System.currentTimeMillis();
+
+
 
         PuckEntry entry = new PuckEntry(
 
-                req.latitude(),
+                lat,
 
-                req.longitude(),
+                lon,
 
                 ts,
 
-                req.bearing(),
+                asDoubleObj(raw.get("bearing")),
 
-                req.confidence(),
+                asFloatObj(raw.get("confidence")),
 
-                req.beaconCount(),
+                asIntObj(raw.get("beaconCount")),
 
-                req.imuSpeedMps(),
+                asDoubleObj(raw.get("imuSpeedMps")),
 
-                req.angularSpeedRadS(),
+                asDoubleObj(raw.get("angularSpeedRadS")),
 
-                req.parked(),
+                asBoolObj(raw.get("parked")),
 
-                req.bumpDetected(),
+                asBoolObj(raw.get("bumpDetected")),
 
-                req.bumpTs(),
+                asLongObj(raw.get("bumpTs")),
 
-                req.histConfidence(),
+                asFloatObj(raw.get("histConfidence")),
 
-                req.softDisplay(),
+                asBoolObj(raw.get("softDisplay")),
 
-                req.gateRejected(),
+                asBoolObj(raw.get("gateRejected")),
 
-                req.rotationOnly(),
+                asBoolObj(raw.get("rotationOnly")),
 
-                req.navLocSuccessCount(),
+                asIntObj(raw.get("navLocSuccessCount")),
 
-                req.imuLaunchConfirmed());
+                asBoolObj(raw.get("imuLaunchConfirmed")),
 
-        store.put(key, entry);
+                extractSensorDebug(raw));
+
+        store.put(key(mapId, sessionId), entry);
 
         return Map.of("ok", true);
 
@@ -142,7 +166,53 @@ public class PuckRelayController {
 
         if (entry.imuLaunchConfirmed != null) out.put("imuLaunchConfirmed", entry.imuLaunchConfirmed);
 
+        if (entry.sensorDebug != null && !entry.sensorDebug.isEmpty()) {
+
+            out.put("sensorDebug", entry.sensorDebug);
+
+            entry.sensorDebug.forEach((k, v) -> {
+
+                if (v != null && !out.containsKey(k)) out.put(k, v);
+
+            });
+
+        }
+
         return out;
+
+    }
+
+
+
+    private static Map<String, Object> extractSensorDebug(Map<String, Object> raw) {
+
+        Map<String, Object> sd = new LinkedHashMap<>();
+
+        Object nested = raw.get("sensorDebug");
+
+        if (nested instanceof Map<?, ?> nestedMap) {
+
+            nestedMap.forEach((k, v) -> {
+
+                if (k != null && v != null) sd.put(String.valueOf(k), v);
+
+            });
+
+        }
+
+        for (String k : SENSOR_KEYS) {
+
+            if (raw.containsKey(k) && !sd.containsKey(k)) {
+
+                Object v = raw.get(k);
+
+                if (v != null) sd.put(k, v);
+
+            }
+
+        }
+
+        return sd.isEmpty() ? null : sd;
 
     }
 
@@ -156,45 +226,163 @@ public class PuckRelayController {
 
 
 
-    public record PuckRequest(
+    private static String asString(Object v) {
 
-            String mapId,
+        return v == null ? null : String.valueOf(v);
 
-            String sessionId,
+    }
 
-            double latitude,
 
-            double longitude,
 
-            Double bearing,
+    private static double asDouble(Object v) {
 
-            Float confidence,
+        if (v instanceof Number n) return n.doubleValue();
 
-            Integer beaconCount,
+        if (v instanceof String s) {
 
-            Double imuSpeedMps,
+            try {
 
-            Double angularSpeedRadS,
+                return Double.parseDouble(s);
 
-            Boolean parked,
+            } catch (NumberFormatException ignored) {
 
-            Boolean bumpDetected,
+                return 0d;
 
-            Long bumpTs,
+            }
 
-            Float histConfidence,
+        }
 
-            Boolean softDisplay,
+        return 0d;
 
-            Boolean gateRejected,
+    }
 
-            Boolean rotationOnly,
 
-            Integer navLocSuccessCount,
 
-            Boolean imuLaunchConfirmed,
+    private static Double asDoubleObj(Object v) {
 
-            Long ts) {
+        if (v == null) return null;
+
+        if (v instanceof Number n) return n.doubleValue();
+
+        if (v instanceof String s) {
+
+            try {
+
+                return Double.parseDouble(s);
+
+            } catch (NumberFormatException ignored) {
+
+                return null;
+
+            }
+
+        }
+
+        return null;
+
+    }
+
+
+
+    private static Float asFloatObj(Object v) {
+
+        Double d = asDoubleObj(v);
+
+        return d == null ? null : d.floatValue();
+
+    }
+
+
+
+    private static Integer asIntObj(Object v) {
+
+        if (v == null) return null;
+
+        if (v instanceof Number n) return n.intValue();
+
+        if (v instanceof String s) {
+
+            try {
+
+                return Integer.parseInt(s);
+
+            } catch (NumberFormatException ignored) {
+
+                return null;
+
+            }
+
+        }
+
+        return null;
+
+    }
+
+
+
+    private static Long asLong(Object v) {
+
+        if (v == null) return 0L;
+
+        if (v instanceof Number n) return n.longValue();
+
+        if (v instanceof String s) {
+
+            try {
+
+                return Long.parseLong(s);
+
+            } catch (NumberFormatException ignored) {
+
+                return 0L;
+
+            }
+
+        }
+
+        return 0L;
+
+    }
+
+
+
+    private static Long asLongObj(Object v) {
+
+        if (v == null) return null;
+
+        if (v instanceof Number n) return n.longValue();
+
+        if (v instanceof String s) {
+
+            try {
+
+                return Long.parseLong(s);
+
+            } catch (NumberFormatException ignored) {
+
+                return null;
+
+            }
+
+        }
+
+        return null;
+
+    }
+
+
+
+    private static Boolean asBoolObj(Object v) {
+
+        if (v == null) return null;
+
+        if (v instanceof Boolean b) return b;
+
+        if (v instanceof Number n) return n.intValue() != 0;
+
+        if (v instanceof String s) return Boolean.parseBoolean(s);
+
+        return null;
 
     }
 
@@ -234,9 +422,12 @@ public class PuckRelayController {
 
             Integer navLocSuccessCount,
 
-            Boolean imuLaunchConfirmed) {
+            Boolean imuLaunchConfirmed,
+
+            Map<String, Object> sensorDebug) {
 
     }
 
 }
+
 
