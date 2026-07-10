@@ -3,6 +3,7 @@ package com.ybhzcavp.controller;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.ybhzcavp.service.AvpDispatchService;
+import com.ybhzcavp.service.AvpLocationProxyService;
 import com.ybhzcavp.service.GrouteProxyService;
 import com.ybhzcavp.service.ParkingService;
 import org.springframework.http.ResponseEntity;
@@ -20,12 +21,15 @@ public class ParkingController {
     private final ParkingService parkingService;
     private final AvpDispatchService avpDispatchService;
     private final GrouteProxyService grouteProxyService;
+    private final AvpLocationProxyService avpLocationProxyService;
 
     public ParkingController(ParkingService parkingService, AvpDispatchService avpDispatchService,
-                             GrouteProxyService grouteProxyService) {
+                             GrouteProxyService grouteProxyService,
+                             AvpLocationProxyService avpLocationProxyService) {
         this.parkingService = parkingService;
         this.avpDispatchService = avpDispatchService;
         this.grouteProxyService = grouteProxyService;
+        this.avpLocationProxyService = avpLocationProxyService;
     }
 
     @GetMapping("/api/nearby")
@@ -79,5 +83,11 @@ public class ParkingController {
     @GetMapping("/api/avp/assignment")
     public Map<String, Object> avpAssignment() {
         return parkingService.avpAssignment();
+    }
+
+    /** H5 导航进度上报，转发至 :3000 /avp/location */
+    @PostMapping("/avp/location")
+    public ResponseEntity<byte[]> avpLocation(@RequestBody String body) {
+        return avpLocationProxyService.postLocation(body);
     }
 }

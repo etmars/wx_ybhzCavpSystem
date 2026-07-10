@@ -8,6 +8,7 @@ public class AppProperties {
     private String dataDir = "./data";
     private String osmandroidAssets = "";
     private Parking parking = new Parking();
+    private Calib calib = new Calib();
     private Navigation navigation = new Navigation();
 
     public String getDataDir() {
@@ -32,6 +33,14 @@ public class AppProperties {
 
     public void setParking(Parking parking) {
         this.parking = parking;
+    }
+
+    public Calib getCalib() {
+        return calib;
+    }
+
+    public void setCalib(Calib calib) {
+        this.calib = calib;
     }
 
     public Navigation getNavigation() {
@@ -124,6 +133,18 @@ public class AppProperties {
 
         public void setParkingLat(double parkingLat) {
             this.parkingLat = parkingLat;
+        }
+    }
+
+    public static class Calib {
+        private String apiBaseUrl = "http://parkinglock.c-avp.com:18181";
+
+        public String getApiBaseUrl() {
+            return apiBaseUrl;
+        }
+
+        public void setApiBaseUrl(String apiBaseUrl) {
+            this.apiBaseUrl = apiBaseUrl;
         }
     }
 

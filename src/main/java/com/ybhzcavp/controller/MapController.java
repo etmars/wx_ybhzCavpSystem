@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.ybhzcavp.service.LocateService;
 import com.ybhzcavp.service.MapDataService;
 import com.ybhzcavp.service.MbtilesService;
+import com.ybhzcavp.service.NavSpeedBumpsService;
+import com.ybhzcavp.service.NavTuningProxyService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -20,11 +22,17 @@ public class MapController {
     private final MapDataService mapDataService;
     private final MbtilesService mbtilesService;
     private final LocateService locateService;
+    private final NavTuningProxyService navTuningProxyService;
+    private final NavSpeedBumpsService navSpeedBumpsService;
 
-    public MapController(MapDataService mapDataService, MbtilesService mbtilesService, LocateService locateService) {
+    public MapController(MapDataService mapDataService, MbtilesService mbtilesService,
+                         LocateService locateService, NavTuningProxyService navTuningProxyService,
+                         NavSpeedBumpsService navSpeedBumpsService) {
         this.mapDataService = mapDataService;
         this.mbtilesService = mbtilesService;
         this.locateService = locateService;
+        this.navTuningProxyService = navTuningProxyService;
+        this.navSpeedBumpsService = navSpeedBumpsService;
     }
 
     @GetMapping("/tiles/{z}/{x}/{y}.pbf")
@@ -63,6 +71,30 @@ public class MapController {
     @PostMapping("/api/locate")
     public Map<String, Object> locate(@RequestBody LocateRequest request) {
         return locateService.locate(request.mapId(), request.rssiMap());
+    }
+
+    @GetMapping("/api/model/nav_tuning.json")
+    public ResponseEntity<byte[]> navTuning(@RequestParam(name = "map_id") String mapId) {
+        return navTuningProxyService.fetchNavTuning(mapId);
+    }
+
+    @GetMapping("/api/maps/{mapId}/speed-bumps")
+    public ResponseEntity<byte[]> speedBumps(@PathVariable String mapId) {
+        byte[] body = navSpeedBumpsService.loadGeoJson(mapId);
+        return ResponseEntity.ok()
+                .header("Content-Type", "application/json")
+                .body(body);
+    }
+
+    @GetMapping("/api/maps/{mapId}/wall_grid.bin")
+    public ResponseEntity<byte[]> wallGrid(@PathVariable String mapId) throws java.io.IOException {
+        java.nio.file.Path path = mapDataService.resolveWallGrid(mapId);
+        if (path == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok()
+                .header("Content-Type", "application/octet-stream")
+                .body(mapDataService.readBytes(path));
     }
 
     public record LocateRequest(String mapId, Map<String, Object> rssiMap) {

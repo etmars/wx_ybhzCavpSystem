@@ -1,5 +1,6 @@
 package com.ybhzcavp.controller;
 
+import com.ybhzcavp.service.JunctionMagService;
 import com.ybhzcavp.service.MapDataService;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
@@ -23,9 +24,11 @@ import java.util.Map;
 public class ModelController {
 
     private final MapDataService mapDataService;
+    private final JunctionMagService junctionMagService;
 
-    public ModelController(MapDataService mapDataService) {
+    public ModelController(MapDataService mapDataService, JunctionMagService junctionMagService) {
         this.mapDataService = mapDataService;
+        this.junctionMagService = junctionMagService;
     }
 
     @GetMapping("/loc_model.json")
@@ -50,6 +53,14 @@ public class ModelController {
             return ResponseEntity.notFound().build();
         }
         return fileResponse(path, "application/json");
+    }
+
+    @GetMapping("/junction_mag.json")
+    public ResponseEntity<byte[]> junctionMag(@RequestParam(name = "map_id", required = false) String mapId) {
+        byte[] body = junctionMagService.buildJson(mapId == null ? "gqyq" : mapId);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+                .body(body);
     }
 
     @PostMapping("/rebuild")

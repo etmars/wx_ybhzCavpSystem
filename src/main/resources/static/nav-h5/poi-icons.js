@@ -91,7 +91,92 @@ function registerNavArrowIcon(map) {
   }
 }
 
+/** 对齐 Android createUserHeadingArrowBitmap — 用户朝向光束锥 */
+function registerUserHeadingIcon(map) {
+  const id = 'user-loc-heading';
+  if (map.hasImage(id)) return;
+  const size = 128;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const cx = size / 2;
+  const cy = size / 2;
+  const radius = 58;
+  const startY = cy - 6;
+  const halfAngle = 20 * (Math.PI / 180);
+  const leftRad = -Math.PI / 2 - halfAngle;
+  ctx.beginPath();
+  ctx.moveTo(cx, startY);
+  ctx.lineTo(cx + radius * Math.cos(leftRad), cy + radius * Math.sin(leftRad));
+  ctx.arc(cx, cy, radius, leftRad, -Math.PI / 2 + halfAngle);
+  ctx.closePath();
+  const grad = ctx.createLinearGradient(cx, startY, cx, cy - radius);
+  grad.addColorStop(0, 'rgba(62,134,236,0.67)');
+  grad.addColorStop(1, 'rgba(62,134,236,0)');
+  ctx.fillStyle = grad;
+  ctx.fill();
+  try {
+    addCanvasImage(map, id, canvas);
+  } catch (e) {
+    console.warn('registerUserHeadingIcon failed', e);
+  }
+}
+
+/** 对齐 Android createDestMarkerBitmap — 终点 P 徽章 + 车位号 */
+function registerDestPinIcon(map, label) {
+  const safe = String(label || '').replace(/[^A-Za-z0-9_-]/g, '_');
+  const iconId = safe ? `nav-dest-pin-${safe}` : 'nav-dest-pin';
+  if (map.hasImage(iconId)) return iconId;
+  const w = 132;
+  const h = 160;
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  const blue = '#3E86EC';
+  const stroke = (x, y, rw, rh, r) => {
+    ctx.beginPath();
+    if (typeof ctx.roundRect === 'function') ctx.roundRect(x, y, rw, rh, r);
+    else ctx.rect(x, y, rw, rh);
+    ctx.stroke();
+  };
+  ctx.fillStyle = blue;
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  if (typeof ctx.roundRect === 'function') ctx.roundRect(34, 6, 64, 64, 14);
+  else ctx.rect(34, 6, 64, 64);
+  ctx.fill();
+  stroke(34, 6, 64, 64, 14);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 44px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('P', w / 2, 38);
+  const plateLabel = String(label || '').replace(/\D/g, '').slice(-4)
+    || String(label || '').slice(-4);
+  if (plateLabel) {
+    ctx.fillStyle = blue;
+    ctx.beginPath();
+    if (typeof ctx.roundRect === 'function') ctx.roundRect(28, 80, 76, 44, 10);
+    else ctx.rect(28, 80, 76, 44);
+    ctx.fill();
+    ctx.font = `bold ${plateLabel.length <= 3 ? 28 : 23}px sans-serif`;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(plateLabel, w / 2, 102);
+  }
+  try {
+    addCanvasImage(map, iconId, canvas);
+  } catch (e) {
+    console.warn('registerDestPinIcon failed', e);
+  }
+  return iconId;
+}
+
 window.MapLayersUtil = {
   registerPoiIcons,
   registerNavArrowIcon,
+  registerUserHeadingIcon,
+  registerDestPinIcon,
 };

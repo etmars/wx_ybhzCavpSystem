@@ -221,6 +221,15 @@ public class MapDataService {
         });
     }
 
+    public Path resolveWallGrid(String mapId) {
+        MapEntry entry = resolveMap(mapId);
+        if (entry == null) {
+            return null;
+        }
+        Path path = dataRoot.resolve("maps").resolve(entry.id()).resolve("wall_grid.bin");
+        return Files.exists(path) ? path : null;
+    }
+
     public record MapEntry(String id, String name, Path osmFile, Path mbtilesFile, Path locModel) {
     }
 

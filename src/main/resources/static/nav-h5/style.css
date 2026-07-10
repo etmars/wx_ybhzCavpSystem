@@ -171,6 +171,15 @@ html, body {
   opacity: 0.9;
 }
 
+.nav-turn-distance {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--hmi-foreground);
+  margin-top: 4px;
+  line-height: 1.2;
+  display: none;
+}
+
 .nav-progress {
   margin-top: 12px;
   height: 6px;
