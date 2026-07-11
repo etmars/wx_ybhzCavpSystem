@@ -37,6 +37,34 @@ let navigating = false;
 let lastDisplay = null;
 let lastCameraTarget = null;
 let lastCameraBearing = null;
+let userMapInteracting = false;
+let userInteractTimer = null;
+let parkingLabelRaf = 0;
+
+const USER_INTERACT_RESUME_MS = 3000;
+
+function markUserMapInteracting() {
+  userMapInteracting = true;
+  if (userInteractTimer) clearTimeout(userInteractTimer);
+  userInteractTimer = setTimeout(() => {
+    userMapInteracting = false;
+    userInteractTimer = null;
+    lastCameraTarget = null;
+    lastCameraBearing = null;
+  }, USER_INTERACT_RESUME_MS);
+}
+
+function scheduleParkingLabelRefresh() {
+  if (parkingLabelRaf) return;
+  parkingLabelRaf = requestAnimationFrame(() => {
+    parkingLabelRaf = 0;
+    if (!map) return;
+    MapLayers.updateParkingLabelSizeByZoom(map);
+    if (lastDisplay && lastDisplay.location) {
+      updateUserPuck(lastDisplay.location, lastDisplay.heading);
+    }
+  });
+}
 
 function parseRoutePoint(p) {
   if (Array.isArray(p) && p.length >= 2) {
@@ -122,6 +150,7 @@ function clearNavCameraPadding() {
 function updateNavCamera(loc, cameraBearing, force, navParked) {
   if (!map || !loc || !navigating) return;
   if (navParked && !force) return;
+  if (userMapInteracting && !force) return;
   const br = cameraBearing;
   const target = [loc.longitude, loc.latitude];
   let moveM = Infinity;
@@ -289,6 +318,7 @@ async function initMap() {
       MapLayersUtil.registerPoiIcons(map);
       MapLayersUtil.registerNavArrowIcon(map);
       MapLayersUtil.registerUserHeadingIcon(map);
+      MapLayers.restackPoiLayers(map);
       await loadParkingLabelIcons(map);
       MapLayers.updateParkingLabelSizeByZoom(map);
 
@@ -322,12 +352,12 @@ async function initMap() {
     }
   });
 
-  map.on('move', () => {
-    MapLayers.updateParkingLabelSizeByZoom(map);
-    if (lastDisplay && lastDisplay.location) {
-      updateUserPuck(lastDisplay.location, lastDisplay.heading);
-    }
-  });
+  map.on('dragstart', markUserMapInteracting);
+  map.on('zoomstart', markUserMapInteracting);
+  map.on('rotatestart', markUserMapInteracting);
+  map.on('pitchstart', markUserMapInteracting);
+  map.on('move', scheduleParkingLabelRefresh);
+  map.on('moveend', scheduleParkingLabelRefresh);
 
   window.__map = map;
 }

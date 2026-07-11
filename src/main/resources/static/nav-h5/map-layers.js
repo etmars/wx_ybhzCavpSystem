@@ -1,29 +1,63 @@
 /** 对齐 Android addRenderLayers / ensureNavRouteLayers / ensureUserLocationLayers */
 
+/** 货梯 sType=3、客梯 sType=4 — 约为通用 POI 的 1/4 */
+const POI_ELEVATOR_STYPE = ['any',
+  ['==', ['to-number', ['get', 'sType']], 3],
+  ['==', ['to-number', ['get', 'sType']], 4],
+];
+
+const POI_ICON_SIZE_EXPR = [
+  'interpolate', ['linear'], ['zoom'],
+  16, ['case', POI_ELEVATOR_STYPE, 0.1125, 0.45],
+  18, ['case', POI_ELEVATOR_STYPE, 0.1375, 0.55],
+  20, ['case', POI_ELEVATOR_STYPE, 0.1625, 0.65],
+  22, ['case', POI_ELEVATOR_STYPE, 0.1875, 0.75],
+];
+
+function insertStyleLayerAfter(style, layer, afterId) {
+  const idx = style.layers.findIndex((l) => l.id === afterId);
+  if (idx >= 0) {
+    style.layers.splice(idx + 1, 0, layer);
+  } else {
+    style.layers.push(layer);
+  }
+}
+
+function insertStyleLayerBefore(style, layer, beforeId) {
+  const idx = style.layers.findIndex((l) => l.id === beforeId);
+  if (idx >= 0) {
+    style.layers.splice(idx, 0, layer);
+  } else {
+    style.layers.push(layer);
+  }
+}
+
 function addExtraStyleLayers(style) {
+  // 对齐 Android：箭头 -> POI -> 障碍物 -> 墙体 -> 车位标签（POI 在墙下以便被遮挡）
   if (!style.layers.some((l) => l.id === 'poi-layer')) {
-    style.layers.push({
+    const poiLayer = {
       id: 'poi-layer',
       type: 'symbol',
       source: 'parking-source',
       'source-layer': 'poi',
       layout: {
         'icon-image': ['concat', 'poi-', ['get', 'sType']],
-        // 对齐 Android poi iconSize 插值，H5 再缩小一档
-        'icon-size': [
-          'interpolate', ['linear'], ['zoom'],
-          16, 0.45,
-          18, 0.55,
-          20, 0.65,
-          22, 0.75,
-        ],
+        'icon-size': POI_ICON_SIZE_EXPR,
         'icon-allow-overlap': true,
         'icon-ignore-placement': true,
+        'icon-pitch-alignment': 'map',
       },
-    });
+    };
+    if (style.layers.some((l) => l.id === 'blocker-100202-extrusion')) {
+      insertStyleLayerBefore(style, poiLayer, 'blocker-100202-extrusion');
+    } else if (style.layers.some((l) => l.id === 'wall-1000-extrusion')) {
+      insertStyleLayerBefore(style, poiLayer, 'wall-1000-extrusion');
+    } else {
+      insertStyleLayerAfter(style, poiLayer, 'arrow-1001-fill');
+    }
   }
   if (!style.layers.some((l) => l.id === 'parking-label')) {
-    style.layers.push({
+    const parkingLabelLayer = {
       id: 'parking-label',
       type: 'symbol',
       source: 'parking-source',
@@ -34,7 +68,8 @@ function addExtraStyleLayers(style) {
         'icon-allow-overlap': true,
         'icon-ignore-placement': true,
       },
-    });
+    };
+    insertStyleLayerAfter(style, parkingLabelLayer, 'wall-1000-extrusion');
   }
 }
 
@@ -90,6 +125,25 @@ function routeTraveledTrimMeters(map) {
   const lat = map.getCenter().lat * Math.PI / 180;
   const metersPerPx = (156543.03392 * Math.cos(lat)) / (2 ** z);
   return (22 + 6) * metersPerPx;
+}
+
+/** POI 须在墙体之下，对齐 Android addRenderLayers 图层顺序 */
+function restackPoiLayers(map) {
+  if (!map.getLayer('poi-layer')) return;
+  if (map.getLayer('arrow-1001-fill')) {
+    moveLayerAbove(map, 'poi-layer', 'arrow-1001-fill');
+  }
+  if (map.getLayer('blocker-100202-extrusion')) {
+    const layers = map.getStyle().layers;
+    const blockerIdx = layers.findIndex((l) => l.id === 'blocker-100202-extrusion');
+    const poiIdx = layers.findIndex((l) => l.id === 'poi-layer');
+    if (blockerIdx >= 0 && poiIdx > blockerIdx) {
+      try { map.moveLayer('poi-layer', 'blocker-100202-extrusion'); } catch (e) { /* ignore */ }
+    }
+  }
+  if (map.getLayer('parking-label') && map.getLayer('wall-1000-extrusion')) {
+    moveLayerAbove(map, 'parking-label', 'wall-1000-extrusion');
+  }
 }
 
 /** 路线必须在 arrow-1001-fill(sType=1001) 之上，顺序对齐 ensureNavLayers + renderPreplannedRoute */
@@ -450,6 +504,7 @@ function updateRouteProgress(map, routePoints, progressPct) {
 window.MapLayers = {
   addExtraStyleLayers,
   addLayerAbove,
+  restackPoiLayers,
   ensureUserPuckLayers,
   ensureUserPuckOnTop,
   ensureNavRouteLayers,
