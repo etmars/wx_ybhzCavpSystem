@@ -1,0 +1,12 @@
+{
+  "sessionId": "test999",
+  "mapId": "gqyq",
+  "spaceId": "B121",
+  "totalLen": 213.72,
+  "estTotalTime": 53.4,
+  "pointsPos": [
+    {"longitude": 116.4917772, "latitude": 39.7295389},
+    {"longitude": 116.4917853, "latitude": 39.7295424},
+    {"longitude": 116.4914705, "latitude": 39.7305063}
+  ]
+}
