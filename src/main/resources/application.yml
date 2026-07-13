@@ -12,7 +12,12 @@ spring:
 
 app:
   data-dir: ${DATA_DIR:./data}
-  osmandroid-assets: ${OSMANDROID_ASSETS:F:/osmandroid/OsmAndroidDemo/app/build/generated/assets/osm}
+  # 默认关闭；地图从 parkinglot catalog + 标定服同步到 data/maps（缓存）
+  sync-osmandroid-assets: ${SYNC_OSMANDROID_ASSETS:false}
+  osmandroid-assets: ${OSMANDROID_ASSETS:}
+  map-sync:
+    enabled: ${MAP_SYNC_ENABLED:true}
+    on-startup: ${MAP_SYNC_ON_STARTUP:true}
   parking:
     nearby-lng: 116.491829413
     nearby-lat: 39.729580309
@@ -28,6 +33,13 @@ app:
   navigation:
     arrival-meters: 8.0
     walk-speed-mps: 1.15
+  planner:
+    base-url: ${PLANNER_BASE_URL:http://127.0.0.1:18080}
+  mqtt:
+    broker-url: ${MQTT_BROKER_URL:tcp://127.0.0.1:1883}
+    enabled: ${MQTT_ENABLED:false}
+  config:
+    db-path: ${CONFIG_DB_PATH:data/config.db}
 
 logging:
   level:

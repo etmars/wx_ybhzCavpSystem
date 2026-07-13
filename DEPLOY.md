@@ -85,7 +85,7 @@ const BASE_URL = 'http://192.168.1.100:12380';
 | `run.bat` 报 Maven 未找到 | 没装 Maven | 用 IntelliJ 打开运行，或让 run.bat 自动下载 |
 | 首页显示「后端未连接」 | 后端没启动或地址错 | 先启动后端，检查 12380 端口 |
 | 真机连不上 localhost | 手机访问不到本机 | 改成电脑局域网 IP |
-| 导航页地图空白 | 后端 geometry API 失败 | 确认 `data/maps/ziguang_1-B2/yiqi.osm` 存在 |
+| 导航页地图空白 | 后端 geometry API 失败 | 确认 map-sync 已跑通，或存在 `data/maps/<map_id>/map.osm`（兼容 yiqi.osm） |
 | 定位不动 | 模拟器无 BLE | 必须真机 + 蓝牙 + 信标环境 |
 | 上传失败 主包超限 | loc_model.json 约 0.5MB | 见下方「分包」 |
 
@@ -104,7 +104,7 @@ mvn -DskipTests package
 
 生成 `target/wx-ybhz-cavp-system-1.0.0.jar`
 
-2. 把整个 `data/` 目录和 jar 一起上传到服务器
+2. 首次部署后确认能访问 parkinglot 与标定服；启动时 `map-sync` 会把地图拉到 `./data/maps/`（也可 `POST /api/admin/maps/sync`）
 
 3. 运行（生产）：
 
@@ -123,7 +123,7 @@ java -jar wx-ybhz-cavp-system-1.0.0.jar
 # 访问 http://localhost:12380
 ```
 
-5. 修改 `application.yml` 中的 `osmandroid-assets` 为服务器上的 data 路径（或直接把数据放在 `./data`）
+5. 地图权威源为 parkinglot catalog + 标定服资产；`data/maps` 仅为缓存，勿再手拷 osmandroid assets 作为主路径
 
 ### 小程序（正式发布）
 

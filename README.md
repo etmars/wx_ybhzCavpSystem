@@ -16,10 +16,21 @@
 
 ## 地图数据
 
-启动时自动从 `app.osmandroid-assets` 同步到 `./data`：
+**权威来源（与 Android 一致）：**
 
-- 默认路径：`F:/osmandroid/OsmAndroidDemo/app/build/generated/assets/osm`
-- 包含：`maps_index.json`、`loc_model.json`、`maps/*/parking.mbtiles`、`yiqi.osm`
+1. parkinglot `GET /api/parking-lots` 取全部车场 id，再 `GET /api/maps?parking_lot_id=` 得到 `map_id` 与 `assets_crc32`
+2. 标定服 `GET /api/model/{file}?map_id=` 提供 `map.osm`、`parking.mbtiles`、`wall_grid.bin`、`loc_model.json` 等
+3. 本服务启动时（`app.map-sync`）按 CRC 同步到 `./data/maps/<map_id>/` 作为**可重建缓存**
+
+本地缓存约定：
+
+- OSM：`map.osm`（兼容旧名 `yiqi.osm`）
+- 瓦片：`parking.mbtiles`
+- CRC 清单：`.assets_crc32.json`
+
+手动同步：`POST /api/admin/maps/sync`
+
+遗留开关：`app.sync-osmandroid-assets=true` 时才会从 `app.osmandroid-assets` 拷贝（默认关闭）。
 
 ## 启动
 
@@ -38,7 +49,14 @@ mvn spring-boot:run
 ```yaml
 app:
   data-dir: ./data
-  osmandroid-assets: F:/osmandroid/OsmAndroidDemo/app/build/generated/assets/osm
+  sync-osmandroid-assets: false
+  map-sync:
+    enabled: true
+    on-startup: true
+  parking:
+    api-base-url: http://parkinglot.c-avp.com:3000
+  calib:
+    api-base-url: http://parkinglock.c-avp.com:18181
 ```
 
 ## 定位 API 示例

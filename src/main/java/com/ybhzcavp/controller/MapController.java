@@ -37,7 +37,7 @@ public class MapController {
 
     @GetMapping("/tiles/{z}/{x}/{y}.pbf")
     public ResponseEntity<byte[]> tile(
-            @RequestParam(defaultValue = "ziguang_1-B2") String map_id,
+            @RequestParam(defaultValue = "") String map_id,
             @PathVariable int z,
             @PathVariable int x,
             @PathVariable int y) {

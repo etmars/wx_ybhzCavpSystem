@@ -114,7 +114,7 @@ public class PuckRelayController {
 
     public Map<String, Object> latestPuck(
 
-            @RequestParam(defaultValue = "ziguang_1-B2") String mapId,
+            @RequestParam(defaultValue = "") String mapId,
 
             @RequestParam(defaultValue = "default") String sessionId) {
 

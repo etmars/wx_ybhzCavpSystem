@@ -51,17 +51,81 @@ public class MapDataService {
         dataRoot = Paths.get(props.getDataDir()).toAbsolutePath().normalize();
         Files.createDirectories(dataRoot);
 
-        Path external = Paths.get(props.getOsmandroidAssets());
-        if (Files.isDirectory(external)) {
-            syncFromExternal(external);
+        if (props.isSyncOsmandroidAssets()) {
+            String assets = props.getOsmandroidAssets();
+            if (assets != null && !assets.isBlank()) {
+                Path external = Paths.get(assets);
+                if (Files.isDirectory(external)) {
+                    log.warn("sync-osmandroid-assets=true: copying from {} (legacy; prefer map-sync)", external);
+                    syncFromExternal(external);
+                }
+            }
         }
 
         loadMapIndex();
         if (mapsById.isEmpty()) {
-            log.warn("No maps loaded. Set app.osmandroid-assets or place data under {}", dataRoot);
+            log.warn("No local maps yet under {}. Waiting for map-sync from parkinglot+calib.", dataRoot);
         } else {
-            log.info("Loaded {} maps from {}", mapsById.size(), dataRoot);
+            log.info("Loaded {} maps from cache {}", mapsById.size(), dataRoot);
         }
+    }
+
+    /** 同步完成后重新加载索引与 KNN，并清空几何缓存 */
+    public synchronized void reloadMaps() throws IOException {
+        mapsById.clear();
+        mapsByName.clear();
+        knnByMapId.clear();
+        sceneCache.clear();
+        geometryCache.clear();
+        loadMapIndex();
+        if (mapsById.isEmpty()) {
+            scanMapsDirectories();
+        }
+        log.info("Reloaded {} maps from {}", mapsById.size(), dataRoot);
+    }
+
+    public Path mapDir(String mapId) {
+        return dataRoot.resolve("maps").resolve(mapId);
+    }
+
+    public Path assetsCrcManifest(String mapId) {
+        return mapDir(mapId).resolve(".assets_crc32.json");
+    }
+
+    /** 按 catalog 条目写入/更新 maps_index.json 并 reload */
+    public synchronized void upsertIndexEntries(List<IndexEntry> entries) throws IOException {
+        Path indexFile = dataRoot.resolve("maps_index.json");
+        ObjectNode root;
+        ArrayNode maps;
+        if (Files.exists(indexFile)) {
+            root = (ObjectNode) MAPPER.readTree(indexFile.toFile());
+            maps = root.withArray("maps");
+        } else {
+            root = MAPPER.createObjectNode();
+            maps = root.putArray("maps");
+        }
+        Map<String, ObjectNode> byId = new HashMap<>();
+        for (JsonNode n : maps) {
+            if (n.has("id")) {
+                byId.put(n.get("id").asText(), (ObjectNode) n);
+            }
+        }
+        for (IndexEntry e : entries) {
+            ObjectNode node = byId.get(e.id());
+            if (node == null) {
+                node = maps.addObject();
+                byId.put(e.id(), node);
+            }
+            node.put("id", e.id());
+            node.put("name", e.name());
+            node.put("osm", "maps/" + e.id() + "/map.osm");
+            node.put("mbtiles", "maps/" + e.id() + "/parking.mbtiles");
+        }
+        MAPPER.writerWithDefaultPrettyPrinter().writeValue(indexFile.toFile(), root);
+        reloadMaps();
+    }
+
+    public record IndexEntry(String id, String name) {
     }
 
     private void syncFromExternal(Path external) throws IOException {
@@ -83,7 +147,11 @@ public class MapDataService {
                         String id = dir.getFileName().toString();
                         Path dest = dataRoot.resolve("maps").resolve(id);
                         Files.createDirectories(dest);
+                        copyIfExists(dir.resolve("map.osm"), dest.resolve("map.osm"));
                         copyIfExists(dir.resolve("yiqi.osm"), dest.resolve("yiqi.osm"));
+                        if (!Files.exists(dest.resolve("map.osm")) && Files.exists(dest.resolve("yiqi.osm"))) {
+                            Files.copy(dest.resolve("yiqi.osm"), dest.resolve("map.osm"), StandardCopyOption.REPLACE_EXISTING);
+                        }
                         copyIfExists(dir.resolve("parking.mbtiles"), dest.resolve("parking.mbtiles"));
                         copyIfExists(dir.resolve("loc_model.json"), dest.resolve("loc_model.json"));
                         copyIfExists(dir.resolve("wall_grid.bin"), dest.resolve("wall_grid.bin"));
@@ -92,10 +160,6 @@ public class MapDataService {
                     }
                 });
             }
-        }
-        Path avpSrc = Paths.get("F:/UserApp-osmandroid/osmandroid/OsmAndroidDemo/app/src/main/assets/I1000110.txt");
-        if (Files.exists(avpSrc)) {
-            Files.copy(avpSrc, dataRoot.resolve("I1000110.txt"), StandardCopyOption.REPLACE_EXISTING);
         }
     }
 
@@ -108,28 +172,65 @@ public class MapDataService {
     private void loadMapIndex() throws IOException {
         Path indexFile = dataRoot.resolve("maps_index.json");
         if (!Files.exists(indexFile)) {
+            scanMapsDirectories();
             return;
         }
         JsonNode root = MAPPER.readTree(indexFile.toFile());
         JsonNode maps = root.get("maps");
         if (maps == null) {
+            scanMapsDirectories();
             return;
         }
         for (JsonNode m : maps) {
             String id = m.get("id").asText();
-            String name = m.get("name").asText();
-            Path mapDir = dataRoot.resolve("maps").resolve(id);
-            MapEntry entry = new MapEntry(
-                    id,
-                    name,
-                    mapDir.resolve("yiqi.osm"),
-                    mapDir.resolve("parking.mbtiles"),
-                    resolveLocModel(mapDir, id)
-            );
-            mapsById.put(id, entry);
-            mapsByName.put(name, entry);
-            loadKnn(entry);
+            String name = m.has("name") ? m.get("name").asText() : id;
+            registerMap(id, name);
         }
+        if (mapsById.isEmpty()) {
+            scanMapsDirectories();
+        }
+    }
+
+    private void scanMapsDirectories() throws IOException {
+        Path mapsRoot = dataRoot.resolve("maps");
+        if (!Files.isDirectory(mapsRoot)) {
+            return;
+        }
+        try (var stream = Files.list(mapsRoot)) {
+            stream.filter(Files::isDirectory).forEach(dir -> {
+                String id = dir.getFileName().toString();
+                if (!mapsById.containsKey(id)) {
+                    registerMap(id, id);
+                }
+            });
+        }
+    }
+
+    private void registerMap(String id, String name) {
+        Path mapDir = dataRoot.resolve("maps").resolve(id);
+        Path osm = resolveOsmFile(mapDir);
+        MapEntry entry = new MapEntry(
+                id,
+                name,
+                osm,
+                mapDir.resolve("parking.mbtiles"),
+                resolveLocModel(mapDir, id)
+        );
+        mapsById.put(id, entry);
+        mapsByName.put(name, entry);
+        loadKnn(entry);
+    }
+
+    static Path resolveOsmFile(Path mapDir) {
+        Path mapOsm = mapDir.resolve("map.osm");
+        if (Files.exists(mapOsm)) {
+            return mapOsm;
+        }
+        Path legacy = mapDir.resolve("yiqi.osm");
+        if (Files.exists(legacy)) {
+            return legacy;
+        }
+        return mapOsm;
     }
 
     private Path resolveLocModel(Path mapDir, String mapId) {
@@ -141,9 +242,7 @@ public class MapDataService {
         if (Files.exists(global)) {
             return global;
         }
-        Path legacy = Paths.get("F:/UserApp-osmandroid/osmandroid/OsmAndroidDemo/app/src/main/assets/maps")
-                .resolve(mapId).resolve("loc_model.json");
-        return Files.exists(legacy) ? legacy : perMap;
+        return perMap;
     }
 
     private void loadKnn(MapEntry entry) {
@@ -162,7 +261,7 @@ public class MapDataService {
 
     public MapEntry resolveMap(String mapFileOrId) {
         if (mapFileOrId == null || mapFileOrId.isBlank()) {
-            return mapsById.get("ziguang_1-B2");
+            return mapsById.values().stream().findFirst().orElse(null);
         }
         MapEntry byId = mapsById.get(mapFileOrId);
         if (byId != null) {
@@ -173,7 +272,8 @@ public class MapDataService {
             return byName;
         }
         for (MapEntry e : mapsById.values()) {
-            if (e.name().contains(mapFileOrId) || mapFileOrId.contains(e.name())) {
+            if (e.name().contains(mapFileOrId) || mapFileOrId.contains(e.name())
+                    || e.id().contains(mapFileOrId) || mapFileOrId.contains(e.id())) {
                 return e;
             }
         }
