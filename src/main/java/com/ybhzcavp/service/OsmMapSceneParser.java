@@ -51,12 +51,35 @@ public final class OsmMapSceneParser {
             List<double[][]> blocker100202,
             List<double[][]> blocker100202Edge,
             List<LabelPoint> parkingLabels,
-            List<LabelPoint> poiPoints
+            List<LabelPoint> poiPoints,
+            List<double[][]> speedBumps1003
     ) {
         static MapScene empty() {
             return new MapScene(0, 0, 0,
                     List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
-                    List.of(), List.of(), List.of(), List.of(), List.of());
+                    List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        }
+
+        /** 减速带（sType=1003）→ GeoJSON FeatureCollection（Polygon）。对齐 NavSpeedBumps 消费格式。 */
+        public ObjectNode speedBumpsGeoJson() {
+            ObjectNode fc = MAPPER.createObjectNode();
+            fc.put("type", "FeatureCollection");
+            ArrayNode features = fc.putArray("features");
+            int seq = 0;
+            for (double[][] ring : speedBumps1003) {
+                if (ring.length < 3) continue;
+                ObjectNode feature = features.addObject();
+                feature.put("type", "Feature");
+                ObjectNode props = feature.putObject("properties");
+                props.put("sType", 1003);
+                props.put("id", "sb_" + seq);
+                ObjectNode geom = feature.putObject("geometry");
+                geom.put("type", "Polygon");
+                ArrayNode rings = geom.putArray("coordinates");
+                rings.add(ringCoords(ring));
+                seq++;
+            }
+            return fc;
         }
 
         public ObjectNode toJson() {
@@ -76,6 +99,7 @@ public final class OsmMapSceneParser {
             layers.set("blocker100202Edge", polylines(blocker100202Edge));
             layers.set("parkingLabels", labels(parkingLabels));
             layers.set("poiPoints", labels(poiPoints));
+            layers.set("speedBumps1003", polys(speedBumps1003));
             return root;
         }
 
@@ -204,6 +228,7 @@ public final class OsmMapSceneParser {
             List<double[][]> blocker100202Edge = new ArrayList<>();
             List<LabelPoint> parkingLabels = new ArrayList<>();
             List<LabelPoint> poiPoints = new ArrayList<>();
+            List<double[][]> speedBumps1003 = new ArrayList<>();
 
             for (Way way : ways) {
                 String sType = way.tags.get("sType");
@@ -255,6 +280,11 @@ public final class OsmMapSceneParser {
                             blocker100202Edge.add(toArray(coords));
                         }
                     }
+                    case "1003" -> {
+                        if (coords.size() >= 3) {
+                            speedBumps1003.add(toArray(coords));
+                        }
+                    }
                     default -> {
                     }
                 }
@@ -285,7 +315,8 @@ public final class OsmMapSceneParser {
 
             return new MapScene(centerLat, centerLon, mapBearingDeg,
                     road2005, road2005Ramp, room2008, parkingFill, parkingEdge, arrow1001,
-                    walls1000, blocker100202, blocker100202Edge, parkingLabels, poiPoints);
+                    walls1000, blocker100202, blocker100202Edge, parkingLabels, poiPoints,
+                    speedBumps1003);
         }
 
         private static boolean isClosed(Way way) {
