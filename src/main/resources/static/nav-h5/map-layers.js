@@ -1,17 +1,20 @@
 /** 对齐 Android addRenderLayers / ensureNavRouteLayers / ensureUserLocationLayers */
 
-/** 货梯 sType=3、客梯 sType=4 — 约为通用 POI 的 1/4 */
+/** 货梯 sType=3、客梯 sType=4 — 约为通用 POI 的 1/6 */
 const POI_ELEVATOR_STYPE = ['any',
   ['==', ['to-number', ['get', 'sType']], 3],
   ['==', ['to-number', ['get', 'sType']], 4],
 ];
 
+/** 不出入口类图标：出入口 sType=10、出口=29、入口=30 */
+const POI_LAYER_FILTER = ['!', ['in', ['to-number', ['get', 'sType']], ['literal', [10, 29, 30]]]];
+
 const POI_ICON_SIZE_EXPR = [
   'interpolate', ['linear'], ['zoom'],
-  16, ['case', POI_ELEVATOR_STYPE, 0.1125, 0.45],
-  18, ['case', POI_ELEVATOR_STYPE, 0.1375, 0.55],
-  20, ['case', POI_ELEVATOR_STYPE, 0.1625, 0.65],
-  22, ['case', POI_ELEVATOR_STYPE, 0.1875, 0.75],
+  16, ['case', POI_ELEVATOR_STYPE, 0.075, 0.45],
+  18, ['case', POI_ELEVATOR_STYPE, 0.092, 0.55],
+  20, ['case', POI_ELEVATOR_STYPE, 0.108, 0.65],
+  22, ['case', POI_ELEVATOR_STYPE, 0.125, 0.75],
 ];
 
 function insertStyleLayerAfter(style, layer, afterId) {
@@ -40,6 +43,7 @@ function addExtraStyleLayers(style) {
       type: 'symbol',
       source: 'parking-source',
       'source-layer': 'poi',
+      filter: POI_LAYER_FILTER,
       layout: {
         'icon-image': ['concat', 'poi-', ['get', 'sType']],
         'icon-size': POI_ICON_SIZE_EXPR,
@@ -114,18 +118,10 @@ function moveLayerAbove(map, layerId, aboveId) {
 const NAV_ROUTE_ARROW_ICON_SIZE = 0.38;
 
 const ROUTE_LINE_LAYOUT = { 'line-cap': 'round', 'line-join': 'round' };
-/** 已走段线帽：butt 避免 round cap 向前伸出到光晕内 */
-const ROUTE_TRAVELED_LAYOUT = { 'line-cap': 'butt', 'line-join': 'round' };
-const ROUTE_REMAINING_LAYOUT = ROUTE_LINE_LAYOUT;
-
-/** 灰线切分点退后距离 ≈ 光晕半径 + 线宽一半，避免圆球前方透出灰色 */
-function routeTraveledTrimMeters(map) {
-  if (!map) return 3;
-  const z = map.getZoom();
-  const lat = map.getCenter().lat * Math.PI / 180;
-  const metersPerPx = (156543.03392 * Math.cos(lat)) / (2 ** z);
-  return (22 + 6) * metersPerPx;
-}
+/** 已走段：round；未走段必须 butt —— round 帽会以切分点为圆心向后伸出半个线宽，
+ * 看起来像定位球后方始终拖着一截未变灰的亮色尾迹（与 Android 一致）。 */
+const ROUTE_TRAVELED_LAYOUT = { 'line-cap': 'round', 'line-join': 'round' };
+const ROUTE_REMAINING_LAYOUT = { 'line-cap': 'butt', 'line-join': 'round' };
 
 /** POI 须在墙体之下，对齐 Android addRenderLayers 图层顺序 */
 function restackPoiLayers(map) {
@@ -339,8 +335,11 @@ function ensureNavRouteLayers(map, routePoints) {
   restackNavRouteLayers(map);
   updateDirectionArrows(map, routePoints);
   updateNavRouteArrowIconSize(map);
+  if (map.getLayer('nav-route-line')) {
+    map.setLayoutProperty('nav-route-line', 'line-cap', 'butt');
+  }
   if (map.getLayer('nav-route-traveled')) {
-    map.setLayoutProperty('nav-route-traveled', 'line-cap', 'butt');
+    map.setLayoutProperty('nav-route-traveled', 'line-cap', 'round');
   }
   ensureUserPuckOnTop(map);
 }
@@ -453,9 +452,9 @@ function updateRouteProgressByMeters(map, routePoints, traveledMeters, metrics) 
   const total = m.total;
   if (total <= 0) return;
   const clamped = Math.max(0, Math.min(traveledMeters, total));
-  const trimM = routeTraveledTrimMeters(map);
-  const traveledSplit = Math.max(0, clamped - trimM);
-  const splitPt = G.pointAtRouteDistance(routePoints, traveledSplit, m);
+  // 与 Android 一致：按真实进度切分，不做灰线后退。
+  // 尾迹问题靠未走段 line-cap=butt 解决。
+  const splitPt = G.pointAtRouteDistance(routePoints, clamped, m);
   if (!splitPt) return;
 
   const traveled = [];
@@ -464,7 +463,7 @@ function updateRouteProgressByMeters(map, routePoints, traveledMeters, metrics) 
   for (let i = 0; i < routePoints.length; i += 1) {
     const cum = m.cumulative[i] || 0;
     const p = routePoints[i];
-    if (cum < traveledSplit - 1e-6) {
+    if (cum < clamped - 1e-6) {
       traveled.push([p.longitude, p.latitude]);
     } else {
       if (!inserted) {

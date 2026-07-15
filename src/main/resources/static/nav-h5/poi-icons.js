@@ -1,4 +1,4 @@
-/** POI 图标注册，对齐 Android registerFlatPoiIcons */
+/** POI 图标注册，对齐 Android registerFlatPoiIcons / createPoiBitmap */
 
 function createPoiCanvas(drawFn) {
   const size = 64;
@@ -8,7 +8,7 @@ function createPoiCanvas(drawFn) {
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = 'rgba(23,33,45,0.8)';
   ctx.strokeStyle = '#ffffff';
-  ctx.lineWidth = 3;
+  ctx.lineWidth = 3.2;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   const r = 7;
@@ -20,8 +20,67 @@ function createPoiCanvas(drawFn) {
   }
   ctx.fill();
   ctx.stroke();
+  ctx.lineWidth = 4;
   drawFn(ctx, size);
   return canvas;
+}
+
+function drawArrow(ctx, x1, y1, x2, y2) {
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+  const angle = Math.atan2(y2 - y1, x2 - x1);
+  const head = 7;
+  const a1 = angle + (150 * Math.PI) / 180;
+  const a2 = angle - (150 * Math.PI) / 180;
+  ctx.beginPath();
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 + head * Math.cos(a1), y2 + head * Math.sin(a1));
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 + head * Math.cos(a2), y2 + head * Math.sin(a2));
+  ctx.stroke();
+}
+
+/** 对齐 Android PoiGlyph.ELEVATOR — 轿厢 + 上下箭头 + 按钮 */
+function drawElevatorGlyph(ctx) {
+  ctx.beginPath();
+  if (typeof ctx.roundRect === 'function') {
+    ctx.roundRect(20, 17, 24, 31, 3);
+  } else {
+    ctx.rect(20, 17, 24, 31);
+  }
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(32, 18);
+  ctx.lineTo(32, 48);
+  ctx.stroke();
+  drawArrow(ctx, 26, 25, 26, 19);
+  drawArrow(ctx, 38, 20, 38, 26);
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.arc(26, 37, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(38, 37, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+/** 对齐 Android PoiGlyph.STAIRS（货梯 sType=3 使用该字形） */
+function drawFreightElevatorGlyph(ctx) {
+  ctx.beginPath();
+  ctx.moveTo(18, 45);
+  ctx.lineTo(26, 45);
+  ctx.lineTo(26, 37);
+  ctx.lineTo(34, 37);
+  ctx.lineTo(34, 29);
+  ctx.lineTo(42, 29);
+  ctx.lineTo(42, 21);
+  ctx.lineTo(48, 21);
+  ctx.stroke();
+  drawArrow(ctx, 22, 26, 42, 18);
 }
 
 function addCanvasImage(map, id, canvas, replace = false) {
@@ -52,38 +111,27 @@ function addHeadingCanvasImage(map, id, canvas, replace = false) {
 }
 
 function registerPoiIcons(map) {
+  // 对齐 Android：poi-3=货梯(STAIRS字形)、poi-4=客梯(ELEVATOR)；不出入口 10/29/30
   const icons = {
-    'poi-1': (ctx) => {
-      ctx.strokeRect(20, 17, 24, 31);
-      ctx.beginPath(); ctx.moveTo(32, 18); ctx.lineTo(32, 48); ctx.stroke();
-    },
-    'poi-3': (ctx) => {
-      for (let i = 0; i < 4; i += 1) {
-        ctx.beginPath();
-        ctx.moveTo(18, 20 + i * 8);
-        ctx.lineTo(46, 20 + i * 8);
-        ctx.stroke();
-      }
-    },
-    'poi-4': (ctx) => {
-      ctx.strokeRect(20, 17, 24, 31);
-      ctx.beginPath(); ctx.moveTo(32, 18); ctx.lineTo(32, 48); ctx.stroke();
-    },
-    'poi-29': (ctx) => {
-      ctx.beginPath(); ctx.arc(32, 28, 8, 0, Math.PI * 2); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(24, 44); ctx.lineTo(40, 44); ctx.stroke();
-    },
-    'poi-30': (ctx) => {
-      ctx.beginPath(); ctx.moveTo(32, 16); ctx.lineTo(44, 48); ctx.lineTo(20, 48); ctx.closePath(); ctx.stroke();
-    },
+    'poi-1': drawElevatorGlyph,
+    'poi-3': drawFreightElevatorGlyph,
+    'poi-4': drawElevatorGlyph,
     'poi-40': (ctx) => {
-      ctx.beginPath(); ctx.arc(32, 32, 10, 0, Math.PI * 2); ctx.stroke();
-      ctx.beginPath(); ctx.arc(32, 32, 4, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill();
+      ctx.fillStyle = '#3E86EC';
+      ctx.beginPath();
+      ctx.arc(32, 32, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(32, 32, 14, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(32, 32, 22, 0, Math.PI * 2);
+      ctx.stroke();
     },
   };
   Object.keys(icons).forEach((id) => {
     try {
-      addCanvasImage(map, id, createPoiCanvas(icons[id]));
+      addCanvasImage(map, id, createPoiCanvas(icons[id]), true);
     } catch (e) {
       console.warn('registerPoiIcons skip', id, e);
     }
