@@ -167,14 +167,109 @@ function restackUserPuckLayers(map) {
 function ensureUserPuckOnTop(map) {
   restackUserPuckLayers(map);
   restackNavRouteLayers(map);
+  // 蓝点先置顶，再把 KNN 橙点盖在蓝点之上——两坐标常几乎重合，橙点在下会被完全挡住
   ['user-loc-halo', 'user-loc-heading-layer', 'user-loc-layer'].forEach((id) => {
+    if (map.getLayer(id)) {
+      try { map.moveLayer(id); } catch (e) { /* ignore */ }
+    }
+  });
+  ['knn-raw-halo', 'knn-raw-layer', 'knn-raw-label'].forEach((id) => {
     if (map.getLayer(id)) {
       try { map.moveLayer(id); } catch (e) { /* ignore */ }
     }
   });
 }
 
+const KNN_RAW_COLOR = '#FF7A00';
+
+/**
+ * 确保 KNN 原始定位点图层存在（橙点 + 标签，与蓝色导航 puck 区分）
+ */
+function ensureKnnRawMarkerLayers(map) {
+  if (!map) return;
+  if (!map.getSource('knn-raw-source')) {
+    map.addSource('knn-raw-source', { type: 'geojson', data: EMPTY_FC });
+  }
+  if (!map.getLayer('knn-raw-halo')) {
+    addLayerAbove(map, {
+      id: 'knn-raw-halo',
+      type: 'circle',
+      source: 'knn-raw-source',
+      paint: {
+        'circle-radius': 18,
+        'circle-color': KNN_RAW_COLOR,
+        'circle-opacity': 0.28,
+        'circle-stroke-width': 0,
+        'circle-pitch-alignment': 'viewport',
+        'circle-pitch-scale': 'viewport',
+      },
+    }, 'parking-label');
+  }
+  if (!map.getLayer('knn-raw-layer')) {
+    addLayerAbove(map, {
+      id: 'knn-raw-layer',
+      type: 'circle',
+      source: 'knn-raw-source',
+      paint: {
+        'circle-radius': 8,
+        'circle-color': KNN_RAW_COLOR,
+        'circle-stroke-color': '#ffffff',
+        'circle-stroke-width': 2.5,
+        'circle-opacity': 1,
+        'circle-pitch-alignment': 'viewport',
+        'circle-pitch-scale': 'viewport',
+      },
+    }, 'knn-raw-halo');
+  }
+  if (!map.getLayer('knn-raw-label')) {
+    addLayerAbove(map, {
+      id: 'knn-raw-label',
+      type: 'symbol',
+      source: 'knn-raw-source',
+      layout: {
+        'text-field': 'KNN',
+        'text-size': 12,
+        'text-offset': [0, 1.5],
+        'text-anchor': 'top',
+        'text-allow-overlap': true,
+        'text-ignore-placement': true,
+        'text-pitch-alignment': 'viewport',
+        'text-rotation-alignment': 'viewport',
+      },
+      paint: {
+        'text-color': KNN_RAW_COLOR,
+        'text-halo-color': '#ffffff',
+        'text-halo-width': 1.5,
+      },
+    }, 'knn-raw-layer');
+  }
+}
+
+/**
+ * 更新 / 隐藏 KNN 原始定位点。show=false 或无坐标时清空。
+ */
+function updateKnnRawMarker(map, loc, show) {
+  if (!map) return;
+  ensureKnnRawMarkerLayers(map);
+  const src = map.getSource('knn-raw-source');
+  if (!src) return;
+  if (!show || !loc || !Number.isFinite(loc.latitude) || !Number.isFinite(loc.longitude)) {
+    src.setData(EMPTY_FC);
+    return;
+  }
+  src.setData({
+    type: 'FeatureCollection',
+    features: [{
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [loc.longitude, loc.latitude] },
+      properties: {},
+    }],
+  });
+  ensureUserPuckOnTop(map);
+}
+
 const PUCK_HALO_COLOR = 'rgba(62, 134, 236, 0.2)'; // Android puck_halo #333E86EC (AARRGGBB)
+
 /** 与 Android iconSize(1.18f) 一致；pitch 用 viewport 时视觉长度才与圆点对齐 */
 const USER_HEADING_ICON_SIZE = 1.18;
 const PUCK_CIRCLE_PAINT = {
@@ -221,9 +316,9 @@ function ensureUserPuckLayers(map, seedLngLat, seedBearing) {
         'icon-size': USER_HEADING_ICON_SIZE,
         'icon-anchor': 'center',
         'icon-rotate': ['get', 'bearing'],
-        'icon-rotation-alignment': 'viewport',
-        // 与 circle 层同为 viewport，俯仰角下光束起点才能与圆点中心重合
-        'icon-pitch-alignment': 'viewport',
+        // 对齐 Android ICON_ROTATION_ALIGNMENT_MAP：bearing 为真北
+        'icon-rotation-alignment': 'map',
+        'icon-pitch-alignment': 'map',
         'icon-allow-overlap': true,
         'icon-ignore-placement': true,
       },
@@ -255,8 +350,8 @@ function ensureUserPuckLayers(map, seedLngLat, seedBearing) {
     window.MapLayersUtil.registerUserHeadingIcon(map);
   }
   if (map.getLayer('user-loc-heading-layer')) {
-    map.setLayoutProperty('user-loc-heading-layer', 'icon-pitch-alignment', 'viewport');
-    map.setLayoutProperty('user-loc-heading-layer', 'icon-rotation-alignment', 'viewport');
+    map.setLayoutProperty('user-loc-heading-layer', 'icon-pitch-alignment', 'map');
+    map.setLayoutProperty('user-loc-heading-layer', 'icon-rotation-alignment', 'map');
     map.setLayoutProperty('user-loc-heading-layer', 'icon-size', USER_HEADING_ICON_SIZE);
   }
   ensureUserPuckOnTop(map);
@@ -506,6 +601,8 @@ window.MapLayers = {
   restackPoiLayers,
   ensureUserPuckLayers,
   ensureUserPuckOnTop,
+  ensureKnnRawMarkerLayers,
+  updateKnnRawMarker,
   ensureNavRouteLayers,
   buildDirectionArrows,
   updateDirectionArrows,

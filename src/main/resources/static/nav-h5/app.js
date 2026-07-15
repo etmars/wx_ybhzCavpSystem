@@ -195,13 +195,12 @@ function seedPuckAtRouteStart() {
   const br = routePoints.length >= 2
     ? window.NavGeo.bearingDegrees(routePoints[0], routePoints[1])
     : 0;
-  MapLayers.ensureUserPuckLayers(map, [start.longitude, start.latitude], headingForScreenIcon(br));
+  MapLayers.ensureUserPuckLayers(map, [start.longitude, start.latitude], headingForMapIcon(br));
 }
 
-function headingForScreenIcon(mapRelHeading) {
-  const h = mapRelHeading || 0;
-  const mapBr = map ? (map.getBearing() || 0) : 0;
-  return ((h - mapBr) % 360 + 360) % 360;
+/** 对齐 Android：ICON_ROTATION_ALIGNMENT_MAP 直接吃真北方位，不做 viewport 换算 */
+function headingForMapIcon(trueNorthHeading) {
+  return ((trueNorthHeading || 0) % 360 + 360) % 360;
 }
 
 function updateUserPuck(loc, bearing) {
@@ -209,7 +208,7 @@ function updateUserPuck(loc, bearing) {
   map.getSource('user-loc-source').setData({
     type: 'Feature',
     geometry: { type: 'Point', coordinates: [loc.longitude, loc.latitude] },
-    properties: { bearing: headingForScreenIcon(bearing) },
+    properties: { bearing: headingForMapIcon(bearing) },
   });
 }
 
@@ -217,6 +216,13 @@ function applyDisplayState(display, forceCamera) {
   if (!display || !display.location) return;
   lastDisplay = display;
   updateUserPuck(display.location, display.heading);
+  if (MapLayers && typeof MapLayers.updateKnnRawMarker === 'function') {
+    MapLayers.updateKnnRawMarker(
+      map,
+      display.knnRawLocation,
+      !!display.showKnnRaw,
+    );
+  }
   MapLayers.updateRouteProgressByMeters(
     map,
     routePoints,

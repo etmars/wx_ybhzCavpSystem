@@ -138,8 +138,9 @@
     return routeSegmentBearingAtDistance(polyline, ahead, m);
   }
 
+  /** 对齐 Android MbtilesMapMeta.cameraBearingDeg：图纸北系方位 → MapLibre 真北 bearing */
   function cameraBearingFromRouteDeg(routeMapRelDeg, mapNorthBearingDeg) {
-    return ((routeMapRelDeg - (mapNorthBearingDeg || 0)) + 360) % 360;
+    return ((routeMapRelDeg + (mapNorthBearingDeg || 0)) + 360) % 360;
   }
 
   function elevationAtRouteDistance(polyline, targetMeters, metrics) {
