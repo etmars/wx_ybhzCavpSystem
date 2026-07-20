@@ -17,7 +17,9 @@
     {
       "id": "background",
       "type": "background",
-      "paint": { "background-color": "#232A38" }
+      "paint": {
+        "background-color": "#232A38"
+      }
     },
     {
       "id": "floor-fill-extrusion",
@@ -26,8 +28,28 @@
       "source-layer": "floor_fill",
       "paint": {
         "fill-extrusion-color": "#1A2330",
-        "fill-extrusion-base": ["coalesce", ["get", "h_base_viz"], 0],
-        "fill-extrusion-height": ["coalesce", ["get", "h_top_viz"], 0.05],
+        "fill-extrusion-base": [
+          "coalesce",
+          [
+            "to-number",
+            [
+              "get",
+              "h_base_viz"
+            ]
+          ],
+          0
+        ],
+        "fill-extrusion-height": [
+          "coalesce",
+          [
+            "to-number",
+            [
+              "get",
+              "h_top_viz"
+            ]
+          ],
+          0.05
+        ],
         "fill-extrusion-opacity": 1.0
       }
     },
@@ -36,35 +58,61 @@
       "type": "fill",
       "source": "parking-source",
       "source-layer": "road_2005_union",
-      "paint": { "fill-color": "#1C242F", "fill-opacity": 1.0 }
+      "paint": {
+        "fill-color": "#1C242F",
+        "fill-opacity": 1.0
+      }
     },
     {
       "id": "room-2008-fill",
       "type": "fill",
       "source": "parking-source",
       "source-layer": "room_2008",
-      "paint": { "fill-color": "#1C242F", "fill-opacity": 1.0 }
+      "paint": {
+        "fill-color": "#1C242F",
+        "fill-opacity": 1.0
+      }
     },
     {
       "id": "parking-fill",
       "type": "fill",
       "source": "parking-source",
       "source-layer": "parking_fill",
-      "paint": { "fill-color": "#1C242F", "fill-opacity": 1.0 }
+      "paint": {
+        "fill-color": "#1C242F",
+        "fill-opacity": 1.0
+      }
     },
     {
       "id": "parking-edge",
       "type": "line",
       "source": "parking-source",
       "source-layer": "parking_edge",
-      "paint": { "line-color": "#4F5965", "line-width": 2.2 }
+      "paint": {
+        "line-color": "#4F5965",
+        "line-width": 2.2
+      }
     },
     {
       "id": "road-2005-ramp-fill",
       "type": "fill",
       "source": "parking-source",
       "source-layer": "road_2005_ramp",
-      "paint": { "fill-color": "#22C7A9", "fill-opacity": 0.95, "fill-antialias": false }
+      "paint": {
+        "fill-color": "#22C7A9",
+        "fill-opacity": 0.95,
+        "fill-antialias": false
+      }
+    },
+    {
+      "id": "ramp-1005-fill",
+      "type": "fill",
+      "source": "parking-source",
+      "source-layer": "ramp_1005",
+      "paint": {
+        "fill-color": "#22C7A9",
+        "fill-opacity": 0.65
+      }
     },
     {
       "id": "ramp-1005-extrusion",
@@ -73,8 +121,28 @@
       "source-layer": "ramp_1005",
       "paint": {
         "fill-extrusion-color": "#22C7A9",
-        "fill-extrusion-base": ["coalesce", ["get", "h_base_viz"], 0],
-        "fill-extrusion-height": ["coalesce", ["get", "h_top_viz"], 1.2],
+        "fill-extrusion-base": [
+          "coalesce",
+          [
+            "to-number",
+            [
+              "get",
+              "h_base_viz"
+            ]
+          ],
+          0
+        ],
+        "fill-extrusion-height": [
+          "coalesce",
+          [
+            "to-number",
+            [
+              "get",
+              "h_top_viz"
+            ]
+          ],
+          1.2
+        ],
         "fill-extrusion-opacity": 0.92
       }
     },
@@ -83,7 +151,10 @@
       "type": "fill",
       "source": "parking-source",
       "source-layer": "arrow_1001",
-      "paint": { "fill-color": "#D7E1F2", "fill-opacity": 0.95 }
+      "paint": {
+        "fill-color": "#D7E1F2",
+        "fill-opacity": 0.95
+      }
     },
     {
       "id": "blocker-100202-extrusion",
@@ -102,7 +173,10 @@
       "type": "line",
       "source": "parking-source",
       "source-layer": "blocker_100202",
-      "paint": { "line-color": "#D6E0EF", "line-width": 1.6 }
+      "paint": {
+        "line-color": "#D6E0EF",
+        "line-width": 1.6
+      }
     },
     {
       "id": "wall-1000-extrusion",
@@ -121,6 +195,10 @@
     "anchor": "viewport",
     "color": "#DCE7FF",
     "intensity": 0.55,
-    "position": [1.0, 52, 30]
+    "position": [
+      1.0,
+      52,
+      30
+    ]
   }
 }
