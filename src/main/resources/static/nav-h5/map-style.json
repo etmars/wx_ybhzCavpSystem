@@ -20,6 +20,18 @@
       "paint": { "background-color": "#232A38" }
     },
     {
+      "id": "floor-fill-extrusion",
+      "type": "fill-extrusion",
+      "source": "parking-source",
+      "source-layer": "floor_fill",
+      "paint": {
+        "fill-extrusion-color": "#1A2330",
+        "fill-extrusion-base": ["coalesce", ["get", "h_base_viz"], 0],
+        "fill-extrusion-height": ["coalesce", ["get", "h_top_viz"], 0.05],
+        "fill-extrusion-opacity": 1.0
+      }
+    },
+    {
       "id": "road-2005-fill",
       "type": "fill",
       "source": "parking-source",
@@ -53,6 +65,18 @@
       "source": "parking-source",
       "source-layer": "road_2005_ramp",
       "paint": { "fill-color": "#22C7A9", "fill-opacity": 0.95, "fill-antialias": false }
+    },
+    {
+      "id": "ramp-1005-extrusion",
+      "type": "fill-extrusion",
+      "source": "parking-source",
+      "source-layer": "ramp_1005",
+      "paint": {
+        "fill-extrusion-color": "#22C7A9",
+        "fill-extrusion-base": ["coalesce", ["get", "h_base_viz"], 0],
+        "fill-extrusion-height": ["coalesce", ["get", "h_top_viz"], 1.2],
+        "fill-extrusion-opacity": 0.92
+      }
     },
     {
       "id": "arrow-1001-fill",
