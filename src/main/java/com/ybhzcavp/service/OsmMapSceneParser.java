@@ -52,12 +52,14 @@ public final class OsmMapSceneParser {
             List<double[][]> blocker100202Edge,
             List<LabelPoint> parkingLabels,
             List<LabelPoint> poiPoints,
-            List<double[][]> speedBumps1003
+            List<double[][]> speedBumps1003,
+            List<double[][]> lane1004
     ) {
         static MapScene empty() {
             return new MapScene(0, 0, 0,
                     List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
-                    List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+                    List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
+                    List.of());
         }
 
         /** 减速带（sType=1003）→ GeoJSON FeatureCollection（Polygon）。对齐 NavSpeedBumps 消费格式。 */
@@ -100,6 +102,7 @@ public final class OsmMapSceneParser {
             layers.set("parkingLabels", labels(parkingLabels));
             layers.set("poiPoints", labels(poiPoints));
             layers.set("speedBumps1003", polys(speedBumps1003));
+            layers.set("lane1004", polylines(lane1004));
             return root;
         }
 
@@ -229,6 +232,7 @@ public final class OsmMapSceneParser {
             List<LabelPoint> parkingLabels = new ArrayList<>();
             List<LabelPoint> poiPoints = new ArrayList<>();
             List<double[][]> speedBumps1003 = new ArrayList<>();
+            List<double[][]> lane1004 = new ArrayList<>();
 
             for (Way way : ways) {
                 String sType = way.tags.get("sType");
@@ -285,6 +289,12 @@ public final class OsmMapSceneParser {
                             speedBumps1003.add(toArray(coords));
                         }
                     }
+                    case "1004" -> {
+                        // 车道线：开放折线，nd 顺序即数字化方向（direction=2 顺向）
+                        if (coords.size() >= 2) {
+                            lane1004.add(toArray(coords));
+                        }
+                    }
                     default -> {
                     }
                 }
@@ -316,7 +326,7 @@ public final class OsmMapSceneParser {
             return new MapScene(centerLat, centerLon, mapBearingDeg,
                     road2005, road2005Ramp, room2008, parkingFill, parkingEdge, arrow1001,
                     walls1000, blocker100202, blocker100202Edge, parkingLabels, poiPoints,
-                    speedBumps1003);
+                    speedBumps1003, lane1004);
         }
 
         private static boolean isClosed(Way way) {
