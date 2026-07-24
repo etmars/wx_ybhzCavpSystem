@@ -27,6 +27,13 @@ const AUTO_START = Q.auto_start === '1';
 const SPACE_ID = Q.space_id || '';
 const SESSION_ID = Q.session_id || 'default';
 const SEED_TEST_ROUTE = Q.seed_test_route === '1';
+const WAYPOINT = (Q.waypoint_lon && Q.waypoint_lat)
+  ? {
+    lon: parseFloat(Q.waypoint_lon),
+    lat: parseFloat(Q.waypoint_lat),
+    label: Q.waypoint_label || '途径点',
+  }
+  : null;
 
 let routePoints = [];
 let routeMetrics = { cumulative: [0], total: 0 };
@@ -338,6 +345,9 @@ async function initMap() {
         }
         if (destination && SPACE_ID) {
           MapLayers.ensureDestPinLayer(map, destination, SPACE_ID);
+        }
+        if (WAYPOINT) {
+          MapLayers.ensureWaypointPinLayer(map, WAYPOINT);
         }
         seedPuckAtRouteStart();
         map.resize();

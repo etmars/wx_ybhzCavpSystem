@@ -296,10 +296,61 @@ function registerDestPinIcon(map, label) {
   return iconId;
 }
 
+/** 途径点标牌（下车点等）：橙色徽章，区别于蓝色终点 P 牌 */
+function registerWaypointPinIcon(map, label) {
+  const text = String(label || '途径点');
+  const safe = text.replace(/[^A-Za-z0-9_-]/g, '') || 'wp';
+  const iconId = `nav-waypoint-pin-${safe}`;
+  if (map.hasImage(iconId)) return iconId;
+  const w = 132;
+  const h = 160;
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  const orange = '#FF8A00';
+  const stroke = (x, y, rw, rh, r) => {
+    ctx.beginPath();
+    if (typeof ctx.roundRect === 'function') ctx.roundRect(x, y, rw, rh, r);
+    else ctx.rect(x, y, rw, rh);
+    ctx.stroke();
+  };
+  ctx.fillStyle = orange;
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.arc(w / 2, 38, 32, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.arc(w / 2, 38, 9, 0, Math.PI * 2);
+  ctx.fill();
+  const plate = text.slice(0, 3);
+  ctx.fillStyle = orange;
+  ctx.beginPath();
+  if (typeof ctx.roundRect === 'function') ctx.roundRect(16, 80, 100, 44, 10);
+  else ctx.rect(16, 80, 100, 44);
+  ctx.fill();
+  stroke(16, 80, 100, 44, 10);
+  ctx.font = 'bold 26px sans-serif';
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(plate, w / 2, 103);
+  try {
+    addCanvasImage(map, iconId, canvas);
+  } catch (e) {
+    console.warn('registerWaypointPinIcon failed', e);
+  }
+  return iconId;
+}
+
 window.MapLayersUtil = {
   registerPoiIcons,
   registerNavArrowIcon,
   registerUserHeadingIcon,
   registerDestPinIcon,
+  registerWaypointPinIcon,
   registerParkingLabelIcons,
 };

@@ -540,6 +540,38 @@ function ensureDestPinLayer(map, destination, spaceId) {
   ensureUserPuckOnTop(map);
 }
 
+/** 途径点标牌层（橙色，区别终点蓝色 P 牌）。waypoint: { lon, lat, label } */
+function ensureWaypointPinLayer(map, waypoint) {
+  if (!map || !waypoint) return;
+  const lon = Number(waypoint.lon != null ? waypoint.lon : waypoint.longitude);
+  const lat = Number(waypoint.lat != null ? waypoint.lat : waypoint.latitude);
+  if (!Number.isFinite(lon) || !Number.isFinite(lat)) return;
+  const iconId = window.MapLayersUtil.registerWaypointPinIcon(map, waypoint.label || '途径点');
+  const feature = {
+    type: 'Feature',
+    geometry: { type: 'Point', coordinates: [lon, lat] },
+    properties: { icon_id: iconId },
+  };
+  if (!map.getSource('nav-waypoint-pin-source')) {
+    map.addSource('nav-waypoint-pin-source', { type: 'geojson', data: feature });
+    addLayerAbove(map, {
+      id: 'nav-waypoint-pin-layer',
+      type: 'symbol',
+      source: 'nav-waypoint-pin-source',
+      layout: {
+        'icon-image': ['get', 'icon_id'],
+        'icon-size': 0.55,
+        'icon-anchor': 'bottom',
+        'icon-allow-overlap': true,
+        'icon-ignore-placement': true,
+      },
+    }, 'parking-label');
+  } else {
+    map.getSource('nav-waypoint-pin-source').setData(feature);
+  }
+  ensureUserPuckOnTop(map);
+}
+
 function updateRouteProgressByMeters(map, routePoints, traveledMeters, metrics) {
   if (!map || routePoints.length < 2) return;
   const G = window.NavGeo;
@@ -610,6 +642,7 @@ window.MapLayers = {
   updateNavRouteArrowIconSize,
   highlightTargetSpace,
   ensureDestPinLayer,
+  ensureWaypointPinLayer,
   updateRouteProgress,
   updateRouteProgressByMeters,
 };
