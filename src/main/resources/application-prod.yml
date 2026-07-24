@@ -1,11 +1,6 @@
-# 生产 profile：HTTPS 9065
+# 生产 profile：本机 HTTP 12380，对外 HTTPS 由 Nginx/反代终止
 # 启动: java -jar xxx.jar --spring.profiles.active=prod
-# 证书由 certbot 申请后用 openssl 转 PKCS12，路径通过环境变量覆盖：
-#   CERT_PATH / CERT_PWD / CERT_ALIAS
+# 可选环境变量：SERVER_ADDRESS（默认 127.0.0.1，仅本机反代可访问）
 server:
-  port: 9065
-  ssl:
-    key-store: ${CERT_PATH:./cert/keystore.p12}
-    key-store-password: ${CERT_PWD:changeit}
-    key-store-type: PKCS12
-    key-alias: ${CERT_ALIAS:cavp}
+  port: 12380
+  address: ${SERVER_ADDRESS:127.0.0.1}

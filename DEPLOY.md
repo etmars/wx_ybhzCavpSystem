@@ -5,7 +5,7 @@
 ```
 手机微信小程序 (wx_ybhzcavp)
   ├─ 本地 KNN 定位（assets/loc_model.json + BLE）  ← 不需要联网
-  └─ 地图/路线 API ──────────→ 后端 (wx_ybhzCavpSystem 本地:12380 / 生产:9065)
+  └─ 地图/路线 API ──────────→ 后端 (wx_ybhzCavpSystem 本机 HTTP:12380；对外 HTTPS 由反代)
 ```
 
 **定位在手机上本地算，后端只负责地图几何和车位分配。**
@@ -107,17 +107,19 @@ sudo -u cavp mvn -DskipTests package
 sudo systemctl restart wx-ybhz-cavp   # 首次：enable --now，见 README
 ```
 
-服务监听 **HTTPS 9065**（`application-prod.yml`）。证书与环境变量见 `/etc/cavp/cavp.env`。
+服务监听本机 **HTTP 12380**（`application-prod.yml`，默认 `127.0.0.1`）。  
+对外 HTTPS（如 `:9065`）由 Nginx 反代，应用内不再配证书。环境变量见 `cavp.env`。
 
-本地开发端口仍为 **12380**（`application.yml`）：
+开发与生产端口一致，均为 **12380**：
 
 ```bash
 mvn spring-boot:run
 # 或
 java -jar target/wx-ybhz-cavp-system-1.0.0.jar
+# 生产加 --spring.profiles.active=prod（绑定 127.0.0.1）
 ```
 
-旧脚本 `deploy-prod.sh`（nohup）可保留作证书转换参考；**进程启停请改用 systemd**。
+旧脚本 `deploy-prod.sh`（内嵌 HTTPS）已过时；**进程启停请用 systemd**。
 
 地图权威源为 parkinglot catalog + 标定服资产；`data/maps` 仅为缓存。
 

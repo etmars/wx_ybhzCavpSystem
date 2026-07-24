@@ -1,5 +1,5 @@
 [Unit]
-Description=宜泊慧智 C-AVP 后端 (wx_ybhzCavpSystem, HTTPS 9065)
+Description=宜泊慧智 C-AVP 后端 (wx_ybhzCavpSystem, HTTP 12380)
 After=network.target
 Wants=network-online.target
 
@@ -7,14 +7,15 @@ Wants=network-online.target
 Type=simple
 # 部署前须存在：
 #   useradd --system --home /opt/cavp --shell /usr/sbin/nologin cavp
-#   mkdir -p /opt/cavp/wx_ybhzCavpSystem /opt/cavp/cert /etc/cavp
-User=cavp
-Group=cavp
-WorkingDirectory=/opt/cavp/wx_ybhzCavpSystem
-EnvironmentFile=-/etc/cavp/cavp.env
+#   mkdir -p /opt/cavp/wx_ybhzCavpSystem /etc/cavp
+# 下列路径按现网实际调整（本机常用 /home/wx_ybhzCavpSystem）
+User=root
+WorkingDirectory=/home/wx_ybhzCavpSystem
+EnvironmentFile=-/home/wx_ybhzCavpSystem/cavp.env
 # 服务器上 git pull 后执行 mvn -DskipTests package，产物在 target/
 # JAVA_HOME / java 路径按机器调整（which java）
-ExecStart=/usr/bin/java -jar /opt/cavp/wx_ybhzCavpSystem/target/wx-ybhz-cavp-system-1.0.0.jar --spring.profiles.active=prod
+# 本机 HTTP :12380；对外 HTTPS 由 Nginx 等反代
+ExecStart=/root/miniconda3/bin/java -jar /home/wx_ybhzCavpSystem/target/wx-ybhz-cavp-system-1.0.0.jar --spring.profiles.active=prod
 Restart=on-failure
 RestartSec=5
 
