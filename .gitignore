@@ -1,6 +1,8 @@
 target/
+dist/
 *.jar
 *.jar.original
+# jar 仅本机构建产物，勿 git add -f；生产用 systemd + mvn package
 .idea/
 *.iml
 .classpath
