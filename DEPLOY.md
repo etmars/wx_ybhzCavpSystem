@@ -91,39 +91,35 @@ const BASE_URL = 'http://192.168.1.100:12380';
 
 ---
 
-## 四、生产部署
+## 四、生产部署（推荐 systemd，不必提交 jar）
 
-### 后端（服务器）
+与 IPDSV / AvpPlanning 相同：**服务器 git pull → mvn package → systemd**。  
+运行时仍是 Spring Boot 的 `target/*.jar`，但**不要**再走「本地打 jar → 提交 dist → scp」。
 
-1. 打包：
+完整步骤见：[infra/systemd/README.md](infra/systemd/README.md)
+
+摘要：
 
 ```bash
-cd F:\wx_ybhzCavpSystem
-mvn -DskipTests package
+cd /opt/cavp/wx_ybhzCavpSystem
+sudo -u cavp git pull
+sudo -u cavp mvn -DskipTests package
+sudo systemctl restart wx-ybhz-cavp   # 首次：enable --now，见 README
 ```
 
-生成 `target/wx-ybhz-cavp-system-1.0.0.jar`
+服务监听 **HTTPS 9065**（`application-prod.yml`）。证书与环境变量见 `/etc/cavp/cavp.env`。
 
-2. 首次部署后确认能访问 parkinglot 与标定服；启动时 `map-sync` 会把地图拉到 `./data/maps/`（也可 `POST /api/admin/maps/sync`）
-
-3. 运行（生产）：
+本地开发端口仍为 **12380**（`application.yml`）：
 
 ```bash
-bash deploy-prod.sh
+mvn spring-boot:run
 # 或
-java -jar wx-ybhz-cavp-system-1.0.0.jar --spring.profiles.active=prod
+java -jar target/wx-ybhz-cavp-system-1.0.0.jar
 ```
 
-服务监听 **HTTPS 9065**（`application-prod.yml`）。Nginx 将 `https://parkinglot.c-avp.com:9065` 反代到该端口。
+旧脚本 `deploy-prod.sh`（nohup）可保留作证书转换参考；**进程启停请改用 systemd**。
 
-4. 本地开发端口为 **12380**（`application.yml`），无需 Nginx：
-
-```bash
-java -jar wx-ybhz-cavp-system-1.0.0.jar
-# 访问 http://localhost:12380
-```
-
-5. 地图权威源为 parkinglot catalog + 标定服资产；`data/maps` 仅为缓存，勿再手拷 osmandroid assets 作为主路径
+地图权威源为 parkinglot catalog + 标定服资产；`data/maps` 仅为缓存。
 
 ### 小程序（正式发布）
 
