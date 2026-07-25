@@ -296,10 +296,11 @@ function registerDestPinIcon(map, label) {
   return iconId;
 }
 
-/** 途径点标牌（下车点等）：橙色徽章，区别于蓝色终点 P 牌 */
-function registerWaypointPinIcon(map, label) {
+/** 途径点标牌（下车点等）：橙色数字徽章 + 文字牌，区别于蓝色终点 P 牌 */
+function registerWaypointPinIcon(map, label, index) {
   const text = String(label || '途径点');
-  const safe = text.replace(/[^A-Za-z0-9_-]/g, '') || 'wp';
+  const num = String(index != null && index !== '' ? index : 1);
+  const safe = `${text.replace(/[^A-Za-z0-9_-]/g, '') || 'wp'}-${num}`;
   const iconId = `nav-waypoint-pin-${safe}`;
   if (map.hasImage(iconId)) return iconId;
   const w = 132;
@@ -309,13 +310,7 @@ function registerWaypointPinIcon(map, label) {
   canvas.height = h;
   const ctx = canvas.getContext('2d');
   const orange = '#FF8A00';
-  const stroke = (x, y, rw, rh, r) => {
-    ctx.beginPath();
-    if (typeof ctx.roundRect === 'function') ctx.roundRect(x, y, rw, rh, r);
-    else ctx.rect(x, y, rw, rh);
-    ctx.stroke();
-  };
-  // 顶部圆形徽章 + 白色圆点
+  // 顶部圆形徽章 + 序号
   ctx.fillStyle = orange;
   ctx.strokeStyle = '#ffffff';
   ctx.lineWidth = 5;
@@ -324,9 +319,10 @@ function registerWaypointPinIcon(map, label) {
   ctx.fill();
   ctx.stroke();
   ctx.fillStyle = '#ffffff';
-  ctx.beginPath();
-  ctx.arc(w / 2, 38, 9, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `bold ${num.length > 1 ? 28 : 34}px sans-serif`;
+  ctx.fillText(num, w / 2, 39);
   // 下方文字牌（如「下车点」）
   const plate = text.slice(0, 3);
   ctx.fillStyle = orange;
@@ -334,11 +330,14 @@ function registerWaypointPinIcon(map, label) {
   if (typeof ctx.roundRect === 'function') ctx.roundRect(16, 80, 100, 44, 10);
   else ctx.rect(16, 80, 100, 44);
   ctx.fill();
-  stroke(16, 80, 100, 44, 10);
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  if (typeof ctx.roundRect === 'function') ctx.roundRect(16, 80, 100, 44, 10);
+  else ctx.rect(16, 80, 100, 44);
+  ctx.stroke();
   ctx.font = 'bold 26px sans-serif';
   ctx.fillStyle = '#ffffff';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
   ctx.fillText(plate, w / 2, 103);
   try {
     addCanvasImage(map, iconId, canvas);

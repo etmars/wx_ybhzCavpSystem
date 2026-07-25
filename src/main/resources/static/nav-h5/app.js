@@ -32,6 +32,7 @@ const WAYPOINT = (Q.waypoint_lon && Q.waypoint_lat)
     lon: parseFloat(Q.waypoint_lon),
     lat: parseFloat(Q.waypoint_lat),
     label: Q.waypoint_label || '途径点',
+    index: parseInt(Q.waypoint_index || '1', 10) || 1,
   }
   : null;
 
@@ -203,6 +204,14 @@ function seedPuckAtRouteStart() {
     ? window.NavGeo.bearingDegrees(routePoints[0], routePoints[1])
     : 0;
   MapLayers.ensureUserPuckLayers(map, [start.longitude, start.latitude], headingForMapIcon(br));
+  if (!lastDisplay || !lastDisplay.location) {
+    lastDisplay = {
+      location: { longitude: start.longitude, latitude: start.latitude },
+      heading: br,
+      progressMeters: 0,
+      navigating: false,
+    };
+  }
 }
 
 /** 对齐 Android：ICON_ROTATION_ALIGNMENT_MAP 直接吃真北方位，不做 viewport 换算 */
@@ -309,7 +318,7 @@ async function initMap() {
   mapCenter = center;
 
   // 带版本参数，避免微信 web-view / CDN 一直吃到旧 map-style（无路面标线）
-  const styleRes = await fetch(`./map-style.json?v=hdroad4`);
+  const styleRes = await fetch(`./map-style.json?v=hdroad5`);
   const style = await styleRes.json();
   style.sources['parking-source'].tiles = [TILES_URL];
   MapLayers.addExtraStyleLayers(style);
@@ -338,17 +347,23 @@ async function initMap() {
 
       const hasRoute = await resolveRoute();
 
-      if (hasRoute) {
+        if (hasRoute) {
         MapLayers.ensureNavRouteLayers(map, routePoints);
         MapLayers.updateDirectionArrows(map, routePoints);
         if (NAV_FLOW === 'PARKING_ENTRY' && SPACE_ID) {
           MapLayers.highlightTargetSpace(map, SPACE_ID);
         }
-        if (destination && SPACE_ID) {
-          MapLayers.ensureDestPinLayer(map, destination, SPACE_ID);
-        }
+        // 途径点橙色数字牌；终点 P 牌仅当末点≠途径点（同图续段预览时末点在第二段终点）
         if (WAYPOINT) {
           MapLayers.ensureWaypointPinLayer(map, WAYPOINT);
+        }
+        if (destination && SPACE_ID) {
+          const sameAsWp = WAYPOINT
+            && Math.abs(destination.longitude - WAYPOINT.lon) < 1e-5
+            && Math.abs(destination.latitude - WAYPOINT.lat) < 1e-5;
+          if (!sameAsWp) {
+            MapLayers.ensureDestPinLayer(map, destination, SPACE_ID);
+          }
         }
         seedPuckAtRouteStart();
         map.resize();
@@ -357,6 +372,7 @@ async function initMap() {
           map.resize();
           focusPreviewCamera();
           seedPuckAtRouteStart();
+          if (WAYPOINT) MapLayers.ensureWaypointPinLayer(map, WAYPOINT);
         });
         if (window.NavDebug) NavDebug.reportRouteState(map, routePoints, { hasRoute: true });
       } else {

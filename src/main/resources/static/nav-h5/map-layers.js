@@ -285,6 +285,10 @@ function ensureUserPuckLayers(map, seedLngLat, seedBearing) {
     geometry: { type: 'Point', coordinates: coords },
     properties: { bearing },
   };
+  // 先注册光束图，再挂 symbol 层（缺图时部分 web-view 会整层不画）
+  if (!map.hasImage('user-loc-heading') && window.MapLayersUtil?.registerUserHeadingIcon) {
+    window.MapLayersUtil.registerUserHeadingIcon(map);
+  }
   if (!map.getSource('user-loc-source')) {
     map.addSource('user-loc-source', { type: 'geojson', data: seed });
   } else {
@@ -345,9 +349,6 @@ function ensureUserPuckLayers(map, seedLngLat, seedBearing) {
   }
   if (map.getLayer('user-loc-layer')) {
     map.setPaintProperty('user-loc-layer', 'circle-pitch-alignment', 'viewport');
-  }
-  if (!map.hasImage('user-loc-heading') && window.MapLayersUtil?.registerUserHeadingIcon) {
-    window.MapLayersUtil.registerUserHeadingIcon(map);
   }
   if (map.getLayer('user-loc-heading-layer')) {
     map.setLayoutProperty('user-loc-heading-layer', 'icon-pitch-alignment', 'map');
@@ -540,13 +541,17 @@ function ensureDestPinLayer(map, destination, spaceId) {
   ensureUserPuckOnTop(map);
 }
 
-/** 途径点标牌层（橙色，区别终点蓝色 P 牌）。waypoint: { lon, lat, label } */
+/** 途径点标牌层（橙色，区别终点蓝色 P 牌）。waypoint: { lon, lat, label, index } */
 function ensureWaypointPinLayer(map, waypoint) {
   if (!map || !waypoint) return;
   const lon = Number(waypoint.lon != null ? waypoint.lon : waypoint.longitude);
   const lat = Number(waypoint.lat != null ? waypoint.lat : waypoint.latitude);
   if (!Number.isFinite(lon) || !Number.isFinite(lat)) return;
-  const iconId = window.MapLayersUtil.registerWaypointPinIcon(map, waypoint.label || '途径点');
+  const iconId = window.MapLayersUtil.registerWaypointPinIcon(
+    map,
+    waypoint.label || '途径点',
+    waypoint.index != null ? waypoint.index : 1,
+  );
   const feature = {
     type: 'Feature',
     geometry: { type: 'Point', coordinates: [lon, lat] },
@@ -554,6 +559,10 @@ function ensureWaypointPinLayer(map, waypoint) {
   };
   if (!map.getSource('nav-waypoint-pin-source')) {
     map.addSource('nav-waypoint-pin-source', { type: 'geojson', data: feature });
+    // 锚在路线之上，避免被蓝线盖住
+    const aboveId = map.getLayer('nav-direction-arrows-layer')
+      ? 'nav-direction-arrows-layer'
+      : (map.getLayer('nav-route-line') ? 'nav-route-line' : 'parking-label');
     addLayerAbove(map, {
       id: 'nav-waypoint-pin-layer',
       type: 'symbol',
@@ -565,9 +574,15 @@ function ensureWaypointPinLayer(map, waypoint) {
         'icon-allow-overlap': true,
         'icon-ignore-placement': true,
       },
-    }, 'parking-label');
+    }, aboveId);
   } else {
     map.getSource('nav-waypoint-pin-source').setData(feature);
+  }
+  if (map.getLayer('nav-waypoint-pin-layer')) {
+    try { map.moveLayer('nav-waypoint-pin-layer'); } catch (e) { /* ignore */ }
+  }
+  if (map.getLayer('nav-route-end-layer')) {
+    map.setLayoutProperty('nav-route-end-layer', 'visibility', 'none');
   }
   ensureUserPuckOnTop(map);
 }
