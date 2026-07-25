@@ -1,5 +1,24 @@
 /** POI 图标注册，对齐 Android registerFlatPoiIcons / createPoiBitmap */
 
+/**
+ * 安全圆角矩形路径。微信 web-view 常有 roundRect 但执行失败（Failed to execute 'roundRect'），
+ * 导致途径点/终点标牌注册抛错、整图 load 中断（蓝点也不再画）。
+ * 因此一律用 arcTo 手绘，不调用原生 roundRect。
+ */
+function pathRoundRect(ctx, x, y, w, h, r) {
+  const radius = Math.max(0, Math.min(Number(r) || 0, Math.min(w, h) / 2));
+  if (radius <= 0) {
+    ctx.rect(x, y, w, h);
+    return;
+  }
+  ctx.moveTo(x + radius, y);
+  ctx.arcTo(x + w, y, x + w, y + h, radius);
+  ctx.arcTo(x + w, y + h, x, y + h, radius);
+  ctx.arcTo(x, y + h, x, y, radius);
+  ctx.arcTo(x, y, x + w, y, radius);
+  ctx.closePath();
+}
+
 function createPoiCanvas(drawFn) {
   const size = 64;
   const canvas = document.createElement('canvas');
@@ -13,11 +32,7 @@ function createPoiCanvas(drawFn) {
   ctx.lineJoin = 'round';
   const r = 7;
   ctx.beginPath();
-  if (typeof ctx.roundRect === 'function') {
-    ctx.roundRect(r, r, size - r * 2, size - r * 2, 9);
-  } else {
-    ctx.rect(r, r, size - r * 2, size - r * 2);
-  }
+  pathRoundRect(ctx, r, r, size - r * 2, size - r * 2, 9);
   ctx.fill();
   ctx.stroke();
   ctx.lineWidth = 4;
@@ -47,11 +62,7 @@ function drawArrow(ctx, x1, y1, x2, y2) {
 /** 对齐 Android PoiGlyph.ELEVATOR — 轿厢 + 上下箭头 + 按钮 */
 function drawElevatorGlyph(ctx) {
   ctx.beginPath();
-  if (typeof ctx.roundRect === 'function') {
-    ctx.roundRect(20, 17, 24, 31, 3);
-  } else {
-    ctx.rect(20, 17, 24, 31);
-  }
+  pathRoundRect(ctx, 20, 17, 24, 31, 3);
   ctx.stroke();
   ctx.beginPath();
   ctx.moveTo(32, 18);
@@ -250,45 +261,39 @@ function registerDestPinIcon(map, label) {
   const safe = String(label || '').replace(/[^A-Za-z0-9_-]/g, '_');
   const iconId = safe ? `nav-dest-pin-${safe}` : 'nav-dest-pin';
   if (map.hasImage(iconId)) return iconId;
-  const w = 132;
-  const h = 160;
-  const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext('2d');
-  const blue = '#3E86EC';
-  const stroke = (x, y, rw, rh, r) => {
-    ctx.beginPath();
-    if (typeof ctx.roundRect === 'function') ctx.roundRect(x, y, rw, rh, r);
-    else ctx.rect(x, y, rw, rh);
-    ctx.stroke();
-  };
-  ctx.fillStyle = blue;
-  ctx.strokeStyle = '#ffffff';
-  ctx.lineWidth = 5;
-  ctx.beginPath();
-  if (typeof ctx.roundRect === 'function') ctx.roundRect(34, 6, 64, 64, 14);
-  else ctx.rect(34, 6, 64, 64);
-  ctx.fill();
-  stroke(34, 6, 64, 64, 14);
-  ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 44px sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('P', w / 2, 38);
-  const plateLabel = String(label || '').replace(/\D/g, '').slice(-4)
-    || String(label || '').slice(-4);
-  if (plateLabel) {
-    ctx.fillStyle = blue;
-    ctx.beginPath();
-    if (typeof ctx.roundRect === 'function') ctx.roundRect(28, 80, 76, 44, 10);
-    else ctx.rect(28, 80, 76, 44);
-    ctx.fill();
-    ctx.font = `bold ${plateLabel.length <= 3 ? 28 : 23}px sans-serif`;
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText(plateLabel, w / 2, 102);
-  }
   try {
+    const w = 132;
+    const h = 160;
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    const blue = '#3E86EC';
+    ctx.fillStyle = blue;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    pathRoundRect(ctx, 34, 6, 64, 64, 14);
+    ctx.fill();
+    ctx.beginPath();
+    pathRoundRect(ctx, 34, 6, 64, 64, 14);
+    ctx.stroke();
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 44px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('P', w / 2, 38);
+    const plateLabel = String(label || '').replace(/\D/g, '').slice(-4)
+      || String(label || '').slice(-4);
+    if (plateLabel) {
+      ctx.fillStyle = blue;
+      ctx.beginPath();
+      pathRoundRect(ctx, 28, 80, 76, 44, 10);
+      ctx.fill();
+      ctx.font = `bold ${plateLabel.length <= 3 ? 28 : 23}px sans-serif`;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(plateLabel, w / 2, 102);
+    }
     addCanvasImage(map, iconId, canvas);
   } catch (e) {
     console.warn('registerDestPinIcon failed', e);
@@ -303,43 +308,41 @@ function registerWaypointPinIcon(map, label, index) {
   const safe = `${text.replace(/[^A-Za-z0-9_-]/g, '') || 'wp'}-${num}`;
   const iconId = `nav-waypoint-pin-${safe}`;
   if (map.hasImage(iconId)) return iconId;
-  const w = 132;
-  const h = 160;
-  const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext('2d');
-  const orange = '#FF8A00';
-  // 顶部圆形徽章 + 序号
-  ctx.fillStyle = orange;
-  ctx.strokeStyle = '#ffffff';
-  ctx.lineWidth = 5;
-  ctx.beginPath();
-  ctx.arc(w / 2, 38, 32, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.stroke();
-  ctx.fillStyle = '#ffffff';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.font = `bold ${num.length > 1 ? 28 : 34}px sans-serif`;
-  ctx.fillText(num, w / 2, 39);
-  // 下方文字牌（如「下车点」）
-  const plate = text.slice(0, 3);
-  ctx.fillStyle = orange;
-  ctx.beginPath();
-  if (typeof ctx.roundRect === 'function') ctx.roundRect(16, 80, 100, 44, 10);
-  else ctx.rect(16, 80, 100, 44);
-  ctx.fill();
-  ctx.strokeStyle = '#ffffff';
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  if (typeof ctx.roundRect === 'function') ctx.roundRect(16, 80, 100, 44, 10);
-  else ctx.rect(16, 80, 100, 44);
-  ctx.stroke();
-  ctx.font = 'bold 26px sans-serif';
-  ctx.fillStyle = '#ffffff';
-  ctx.fillText(plate, w / 2, 103);
   try {
+    const w = 132;
+    const h = 160;
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    const orange = '#FF8A00';
+    // 顶部圆形徽章 + 序号
+    ctx.fillStyle = orange;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.arc(w / 2, 38, 32, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `bold ${num.length > 1 ? 28 : 34}px sans-serif`;
+    ctx.fillText(num, w / 2, 39);
+    // 下方文字牌（如「下车点」）
+    const plate = text.slice(0, 3);
+    ctx.fillStyle = orange;
+    ctx.beginPath();
+    pathRoundRect(ctx, 16, 80, 100, 44, 10);
+    ctx.fill();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    pathRoundRect(ctx, 16, 80, 100, 44, 10);
+    ctx.stroke();
+    ctx.font = 'bold 26px sans-serif';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(plate, w / 2, 103);
     addCanvasImage(map, iconId, canvas);
   } catch (e) {
     console.warn('registerWaypointPinIcon failed', e);
