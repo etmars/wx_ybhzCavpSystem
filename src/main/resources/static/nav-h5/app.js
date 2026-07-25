@@ -308,7 +308,8 @@ async function initMap() {
   }
   mapCenter = center;
 
-  const styleRes = await fetch('./map-style.json');
+  // 带版本参数，避免微信 web-view / CDN 一直吃到旧 map-style（无路面标线）
+  const styleRes = await fetch(`./map-style.json?v=hdroad4`);
   const style = await styleRes.json();
   style.sources['parking-source'].tiles = [TILES_URL];
   MapLayers.addExtraStyleLayers(style);
