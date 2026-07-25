@@ -8,7 +8,7 @@
       "tiles": [
         "__TILES_URL__"
       ],
-      "maxzoom": 22,
+      "maxzoom": 20,
       "minzoom": 14,
       "promoteId": "id"
     }
@@ -22,35 +22,13 @@
       }
     },
     {
-      "id": "floor-fill-extrusion",
-      "type": "fill-extrusion",
+      "id": "floor-fill",
+      "type": "fill",
       "source": "parking-source",
       "source-layer": "floor_fill",
       "paint": {
-        "fill-extrusion-color": "#1A2330",
-        "fill-extrusion-base": [
-          "coalesce",
-          [
-            "to-number",
-            [
-              "get",
-              "h_base_viz"
-            ]
-          ],
-          0
-        ],
-        "fill-extrusion-height": [
-          "coalesce",
-          [
-            "to-number",
-            [
-              "get",
-              "h_top_viz"
-            ]
-          ],
-          0.05
-        ],
-        "fill-extrusion-opacity": 1.0
+        "fill-color": "#1A1F26",
+        "fill-opacity": 1.0
       }
     },
     {
@@ -59,8 +37,29 @@
       "source": "parking-source",
       "source-layer": "road_2005_union",
       "paint": {
-        "fill-color": "#1C242F",
+        "fill-color": "#3F4652",
         "fill-opacity": 1.0
+      }
+    },
+    {
+      "id": "junction-1005-fill",
+      "type": "fill",
+      "source": "parking-source",
+      "source-layer": "junction_1005",
+      "paint": {
+        "fill-color": "#E8D48B",
+        "fill-opacity": 0.88
+      }
+    },
+    {
+      "id": "junction-1005-edge",
+      "type": "line",
+      "source": "parking-source",
+      "source-layer": "junction_1005",
+      "paint": {
+        "line-color": "#C9B06A",
+        "line-width": 1.4,
+        "line-opacity": 0.9
       }
     },
     {
@@ -79,7 +78,7 @@
       "source": "parking-source",
       "source-layer": "parking_fill",
       "paint": {
-        "fill-color": "#1C242F",
+        "fill-color": "#243041",
         "fill-opacity": 1.0
       }
     },
@@ -89,61 +88,65 @@
       "source": "parking-source",
       "source-layer": "parking_edge",
       "paint": {
-        "line-color": "#4F5965",
+        "line-color": "#6B7785",
         "line-width": 2.2
       }
     },
     {
-      "id": "road-2005-ramp-fill",
-      "type": "fill",
+      "id": "lane-bound-line",
+      "type": "line",
       "source": "parking-source",
-      "source-layer": "road_2005_ramp",
+      "source-layer": "lane_bound",
+      "layout": {
+        "line-cap": "butt",
+        "line-join": "miter"
+      },
       "paint": {
-        "fill-color": "#22C7A9",
-        "fill-opacity": 0.95,
-        "fill-antialias": false
+        "line-color": "#F1F5F9",
+        "line-width": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          14,
+          1.2,
+          16,
+          1.8,
+          19,
+          2.6,
+          22,
+          3.4
+        ],
+        "line-opacity": 0.95
       }
     },
     {
-      "id": "ramp-1005-fill",
-      "type": "fill",
+      "id": "junction-label",
+      "type": "symbol",
       "source": "parking-source",
-      "source-layer": "ramp_1005",
-      "paint": {
-        "fill-color": "#22C7A9",
-        "fill-opacity": 0.65
-      }
-    },
-    {
-      "id": "ramp-1005-extrusion",
-      "type": "fill-extrusion",
-      "source": "parking-source",
-      "source-layer": "ramp_1005",
-      "paint": {
-        "fill-extrusion-color": "#22C7A9",
-        "fill-extrusion-base": [
-          "coalesce",
-          [
-            "to-number",
-            [
-              "get",
-              "h_base_viz"
-            ]
-          ],
-          0
+      "source-layer": "junction_label",
+      "layout": {
+        "text-field": ["get", "text"],
+        "text-size": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          14,
+          22,
+          16,
+          26,
+          19,
+          32,
+          22,
+          38
         ],
-        "fill-extrusion-height": [
-          "coalesce",
-          [
-            "to-number",
-            [
-              "get",
-              "h_top_viz"
-            ]
-          ],
-          1.2
-        ],
-        "fill-extrusion-opacity": 0.92
+        "text-font": ["Open Sans Regular", "Arial Unicode MS Regular"],
+        "text-allow-overlap": true,
+        "text-ignore-placement": true
+      },
+      "paint": {
+        "text-color": "#E9FFF9",
+        "text-halo-color": "#0F2A2A",
+        "text-halo-width": 2.4
       }
     },
     {

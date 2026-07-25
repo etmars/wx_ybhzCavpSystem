@@ -315,6 +315,7 @@ function registerWaypointPinIcon(map, label) {
     else ctx.rect(x, y, rw, rh);
     ctx.stroke();
   };
+  // 顶部圆形徽章 + 白色圆点
   ctx.fillStyle = orange;
   ctx.strokeStyle = '#ffffff';
   ctx.lineWidth = 5;
@@ -326,6 +327,7 @@ function registerWaypointPinIcon(map, label) {
   ctx.beginPath();
   ctx.arc(w / 2, 38, 9, 0, Math.PI * 2);
   ctx.fill();
+  // 下方文字牌（如「下车点」）
   const plate = text.slice(0, 3);
   ctx.fillStyle = orange;
   ctx.beginPath();

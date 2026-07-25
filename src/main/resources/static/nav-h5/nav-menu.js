@@ -13,15 +13,16 @@
     { id: 'ble_record', label: '录制BLE数据(5分钟)', type: 'action' },
     { id: 'loc_engine', label: '定位引擎切换', type: 'action' },
     { id: 'correct_bearing', label: '修正方向', type: 'action' },
-    { id: 'nav_auto_heading_correct', label: '自动修正朝向', type: 'toggle', key: 'navAutoHeadingCorrect', default: false },
+    { id: 'nav_auto_heading_correct', label: '自动修正朝向', type: 'toggle', key: 'navAutoHeadingCorrect', default: true },
     { id: 'download_weights', label: '下载模型权重', type: 'action' },
     { id: 'sync_model', label: '同步定位模型', type: 'action' },
     { id: 'nav_knn_speed', label: 'KNN邻近点推算速度', type: 'toggle', key: 'navSpeedUseKnn', default: true },
     { id: 'nav_imu_speed', label: 'IMU积分推算速度', type: 'toggle', key: 'navSpeedUseImu', default: true },
     { id: 'avp_location_upload', label: '上传服务器车辆定位', type: 'toggle', key: 'avpLocationUploadEnabled', default: true },
-    { id: 'use_server_park_data', label: '使用服务器泊车数据', type: 'toggle', key: 'useServerParkData', default: false },
+    { id: 'use_server_park_data', label: '使用服务器泊车数据', type: 'toggle', key: 'useServerParkData', default: true },
     { id: 'view_park_cache', label: '查看缓存数据', type: 'action' },
     { id: 'nav_sensor_debug', label: '传感器调试浮层', type: 'toggle', key: 'navSensorDebugOverlayEnabled', default: false },
+    { id: 'nav_knn_raw_marker', label: '显示KNN定位点', type: 'toggle', key: 'navKnnRawMarkerEnabled', default: false },
   ];
 
   let ctx = null;
@@ -242,7 +243,6 @@
       }
       case 'view_park_cache':
         postHost('view_park_cache');
-        toast('查看缓存（小程序处理）');
         break;
       case 'nav_sensor_debug': {
         const on = !getToggle(item.key, item.default);
@@ -253,6 +253,13 @@
         }
         applyDebugVisibility();
         toast(on ? '传感器调试(原生): 开' : '传感器调试(原生): 关');
+        break;
+      }
+      case 'nav_knn_raw_marker': {
+        const on = !getToggle(item.key, item.default);
+        setToggle(item.key, on);
+        postHost('nav_knn_raw_marker', { enabled: on });
+        toast(on ? '显示KNN定位点: 开' : '显示KNN定位点: 关');
         break;
       }
       default:
