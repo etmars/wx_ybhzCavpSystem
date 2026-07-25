@@ -440,6 +440,40 @@ function ensureNavRouteLayers(map, routePoints) {
   ensureUserPuckOnTop(map);
 }
 
+/**
+ * 同图续段预览：灰色虚线，挂在 nav-route-casing 下方，
+ * 与当前导航蓝线分开显示。
+ */
+function ensureRoutePreviewLayer(map, previewPoints) {
+  if (!map || !Array.isArray(previewPoints) || previewPoints.length < 2) return;
+  const coords = previewPoints.map((p) => [p.longitude, p.latitude]);
+  const line = lineFeature(coords);
+  if (!map.getSource('nav-route-preview-source')) {
+    map.addSource('nav-route-preview-source', { type: 'geojson', data: line });
+    const layer = {
+      id: 'nav-route-preview',
+      type: 'line',
+      source: 'nav-route-preview-source',
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': '#8A94A6',
+        'line-width': 8,
+        'line-opacity': 0.75,
+        'line-dasharray': [2, 2],
+      },
+    };
+    if (map.getLayer('nav-route-casing')) {
+      // MapLibre addLayer(layer, beforeId)：插到 casing 之前 = 视觉上在蓝线下方
+      map.addLayer(layer, 'nav-route-casing');
+    } else {
+      const routeBase = map.getLayer('arrow-1001-fill') ? 'arrow-1001-fill' : 'parking-edge';
+      addLayerAbove(map, layer, routeBase);
+    }
+  } else {
+    map.getSource('nav-route-preview-source').setData(line);
+  }
+}
+
 /** 对齐 updateParkingLabelSizeByZoom，H5 web-view 略小于 Android 但比旧版稍大 */
 function updateParkingLabelSizeByZoom(map) {
   if (!map || !map.getLayer('parking-label')) return;
@@ -651,6 +685,7 @@ window.MapLayers = {
   ensureKnnRawMarkerLayers,
   updateKnnRawMarker,
   ensureNavRouteLayers,
+  ensureRoutePreviewLayer,
   buildDirectionArrows,
   updateDirectionArrows,
   updateParkingLabelSizeByZoom,

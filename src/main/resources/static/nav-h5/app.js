@@ -35,8 +35,11 @@ const WAYPOINT = (Q.waypoint_lon && Q.waypoint_lat)
     index: parseInt(Q.waypoint_index || '1', 10) || 1,
   }
   : null;
+const ACTIVE_LEN = parseInt(Q.active_len || '0', 10) || 0;
+const DEST_IS_FINAL = Q.dest_is_final === '1';
 
 let routePoints = [];
+let previewPoints = [];
 let routeMetrics = { cumulative: [0], total: 0 };
 let destination = null;
 let map = null;
@@ -91,9 +94,16 @@ function parseRoutePoint(p) {
 
 function applyRoutePoints(arr) {
   if (!Array.isArray(arr) || !arr.length) return false;
-  const points = arr.map(parseRoutePoint).filter(Boolean);
-  if (points.length < 2) return false;
-  routePoints = points;
+  const all = arr.map(parseRoutePoint).filter(Boolean);
+  if (all.length < 2) return false;
+  // active_len：当前导航段点数；之后同图续段作为灰色虚线预览
+  if (ACTIVE_LEN > 1 && ACTIVE_LEN < all.length) {
+    routePoints = all.slice(0, ACTIVE_LEN);
+    previewPoints = all.slice(ACTIVE_LEN - 1);
+  } else {
+    routePoints = all;
+    previewPoints = [];
+  }
   routeMetrics = window.NavGeo.buildRouteMetrics(routePoints);
   destination = routePoints[routePoints.length - 1];
   return true;
@@ -347,23 +357,21 @@ async function initMap() {
 
       const hasRoute = await resolveRoute();
 
-        if (hasRoute) {
+      if (hasRoute) {
         MapLayers.ensureNavRouteLayers(map, routePoints);
         MapLayers.updateDirectionArrows(map, routePoints);
+        if (previewPoints.length >= 2 && typeof MapLayers.ensureRoutePreviewLayer === 'function') {
+          MapLayers.ensureRoutePreviewLayer(map, previewPoints);
+        }
         if (NAV_FLOW === 'PARKING_ENTRY' && SPACE_ID) {
           MapLayers.highlightTargetSpace(map, SPACE_ID);
         }
-        // 途径点橙色数字牌；终点 P 牌仅当末点≠途径点（同图续段预览时末点在第二段终点）
+        // 途径点橙色数字牌；终点 P 牌仅当预览段确实终止于目标车位
         if (WAYPOINT) {
           MapLayers.ensureWaypointPinLayer(map, WAYPOINT);
         }
-        if (destination && SPACE_ID) {
-          const sameAsWp = WAYPOINT
-            && Math.abs(destination.longitude - WAYPOINT.lon) < 1e-5
-            && Math.abs(destination.latitude - WAYPOINT.lat) < 1e-5;
-          if (!sameAsWp) {
-            MapLayers.ensureDestPinLayer(map, destination, SPACE_ID);
-          }
+        if (DEST_IS_FINAL && destination && SPACE_ID) {
+          MapLayers.ensureDestPinLayer(map, destination, SPACE_ID);
         }
         seedPuckAtRouteStart();
         map.resize();
@@ -374,7 +382,11 @@ async function initMap() {
           seedPuckAtRouteStart();
           if (WAYPOINT) MapLayers.ensureWaypointPinLayer(map, WAYPOINT);
         });
-        if (window.NavDebug) NavDebug.reportRouteState(map, routePoints, { hasRoute: true });
+        if (window.NavDebug) NavDebug.reportRouteState(map, routePoints, {
+          hasRoute: true,
+          previewLen: previewPoints.length,
+          activeLen: routePoints.length,
+        });
       } else {
         map.flyTo({ center: mapCenter, zoom: T.PREVIEW_ZOOM, pitch: T.NAV_PITCH, bearing: MAP_BEARING, duration: 0 });
       }
@@ -382,6 +394,7 @@ async function initMap() {
       onDisplayFromHash(true);
     } catch (e) {
       if (window.NavDebug) NavDebug.logError('map.on(load)', e);
+      showMapLoadError(e);
     }
   });
 
@@ -399,6 +412,34 @@ function postToMiniProgram(msg) {
   if (window.wx && wx.miniProgram && wx.miniProgram.postMessage) {
     wx.miniProgram.postMessage({ data: msg });
   }
+}
+
+/** 无条件显示 map.on('load') 异常，便于定位蓝点/标牌不渲染 */
+function showMapLoadError(err) {
+  const msg = (err && (err.message || err.stack)) ? String(err.message || err.stack) : String(err || 'unknown');
+  console.error('[nav-h5] map.on(load) failed', err);
+  let el = document.getElementById('navLoadError');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'navLoadError';
+    el.style.cssText = [
+      'position:fixed',
+      'left:8px',
+      'right:8px',
+      'bottom:88px',
+      'z-index:10000',
+      'background:rgba(180,20,20,0.92)',
+      'color:#fff',
+      'font:12px/1.4 sans-serif',
+      'padding:10px 12px',
+      'border-radius:8px',
+      'white-space:pre-wrap',
+      'word-break:break-all',
+      'pointer-events:none',
+    ].join(';');
+    document.body.appendChild(el);
+  }
+  el.textContent = `地图加载异常：${msg.slice(0, 400)}`;
 }
 
 window.addEventListener('load', async () => {
