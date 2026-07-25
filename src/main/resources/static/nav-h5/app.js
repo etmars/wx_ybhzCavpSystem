@@ -196,6 +196,17 @@ function updateNavCamera(loc, cameraBearing, force, navParked) {
   });
 }
 
+/**
+ * 预览相机方位：route-up，让起点前方路径竖直向上。
+ * MapLibre 的 bearing 就是「哪个方位朝屏幕上方」，且与路线点同处一个渲染坐标系，
+ * 因此直接用路线前向方位，不能再叠加 MAP_BEARING（那会把路径转回图北朝上）。
+ */
+function previewCameraBearing() {
+  if (routePoints.length < 2) return MAP_BEARING;
+  const br = window.NavGeo.routeForwardBearingAtProgress(routePoints, 0, routeMetrics);
+  return Number.isFinite(br) ? br : MAP_BEARING;
+}
+
 function focusPreviewCamera() {
   if (!map || routePoints.length < 1) return;
   const start = routePoints[0];
@@ -203,7 +214,7 @@ function focusPreviewCamera() {
     center: [start.longitude, start.latitude],
     zoom: T.PREVIEW_ZOOM,
     pitch: T.NAV_PITCH,
-    bearing: MAP_BEARING,
+    bearing: previewCameraBearing(),
   });
 }
 
@@ -285,7 +296,7 @@ function recenterCamera() {
       center: [start.longitude, start.latitude],
       zoom: Math.max(T.NAV_ZOOM - 0.5, 18.5),
       pitch: T.NAV_PITCH,
-      bearing: MAP_BEARING,
+      bearing: previewCameraBearing(),
       duration: 300,
     });
   }
