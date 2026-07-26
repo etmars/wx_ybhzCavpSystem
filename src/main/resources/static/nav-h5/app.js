@@ -155,14 +155,26 @@ async function resolveRoute() {
   return loadRouteFromSession();
 }
 
-function applyNavCameraPadding() {
-  if (!map) return;
-  map.setPadding({ top: 0, bottom: T.NAV_PADDING_BOTTOM, left: 0, right: 0 });
+/**
+ * 让蓝点固定停在屏幕下方，前方路径留出上方视野。
+ * MapLibre 把中心点摆在「扣掉 padding 后」区域的中心，所以是加 top padding 把点压低：
+ * (top + h) / 2 = ratio * h  →  top = (2 * ratio - 1) * h。
+ */
+function navCameraPadding() {
+  const h = map && map.getContainer() ? map.getContainer().clientHeight : 0;
+  if (!h) return { top: 0, bottom: 0, left: 0, right: 0 };
+  const ratio = Math.min(0.9, Math.max(0.5, T.NAV_PUCK_SCREEN_RATIO || 0.68));
+  return {
+    top: Math.max(0, Math.round((2 * ratio - 1) * h)),
+    bottom: 0,
+    left: 0,
+    right: 0,
+  };
 }
 
-function clearNavCameraPadding() {
+function applyNavCameraPadding() {
   if (!map) return;
-  map.setPadding({ top: 0, bottom: 0, left: 0, right: 0 });
+  map.setPadding(navCameraPadding());
 }
 
 function updateNavCamera(loc, cameraBearing, force, navParked) {
@@ -275,11 +287,8 @@ function syncNavStateFromDisplay(display) {
   if (!display) return;
   const wasNav = navigating;
   navigating = !!display.navigating;
-  if (navigating && !wasNav) {
-    applyNavCameraPadding();
-  } else if (!navigating && wasNav) {
-    clearNavCameraPadding();
-  }
+  // 预览态也保持同样的偏移，蓝点不会在起步瞬间跳一下
+  if (navigating !== wasNav) applyNavCameraPadding();
 }
 
 function recenterCamera() {
@@ -386,9 +395,11 @@ async function initMap() {
         }
         seedPuckAtRouteStart();
         map.resize();
+        applyNavCameraPadding();
         focusPreviewCamera();
         map.once('idle', () => {
           map.resize();
+          applyNavCameraPadding();
           focusPreviewCamera();
           seedPuckAtRouteStart();
           if (WAYPOINT) MapLayers.ensureWaypointPinLayer(map, WAYPOINT);
@@ -455,5 +466,11 @@ function showMapLoadError(err) {
 
 window.addEventListener('load', async () => {
   window.addEventListener('hashchange', () => onDisplayFromHash(false));
+  // 旋转/尺寸变化后 padding 按新高度重算，否则蓝点偏移比例会失真
+  window.addEventListener('resize', () => {
+    if (!map) return;
+    map.resize();
+    applyNavCameraPadding();
+  });
   await initMap();
 });
