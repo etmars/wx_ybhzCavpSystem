@@ -116,6 +116,8 @@ function moveLayerAbove(map, layerId, aboveId) {
 
 /** 路线箭头 icon-size — 64px 位图在 10px 线宽上需缩小 */
 const NAV_ROUTE_ARROW_ICON_SIZE = 0.38;
+/** 箭头锚点最小间距，配合上限 14 个决定整条路线放几个 */
+const NAV_ROUTE_ARROW_GAP_M = 12;
 
 const ROUTE_LINE_LAYOUT = { 'line-cap': 'round', 'line-join': 'round' };
 /** 已走段：round；未走段必须 butt —— round 帽会以切分点为圆心向后伸出半个线宽，
@@ -492,40 +494,58 @@ function updateNavRouteArrowIconSize(map) {
   map.setLayoutProperty('nav-direction-arrows-layer', 'icon-size', NAV_ROUTE_ARROW_ICON_SIZE);
 }
 
-/** 对齐 MainActivity.renderPreplannedRoute */
+/**
+ * 对齐 MainActivity.renderPreplannedRoute。
+ * 锚点按整条路线的里程等距取，落点与路线绑定，导航中不重算。
+ */
 function buildDirectionArrows(routePoints, maxArrows = 14) {
   const features = [];
   if (!routePoints || routePoints.length < 2) return features;
   const G = window.NavGeo;
-  const stepCount = Math.min(maxArrows, routePoints.length - 1);
-  for (let k = 1; k < stepCount; k += 1) {
-    const idx = Math.min(
-      routePoints.length - 2,
-      Math.floor((k * (routePoints.length - 1)) / stepCount),
-    );
-    const a = routePoints[idx];
-    const b = routePoints[idx + 1];
+  const m = G.buildRouteMetrics(routePoints);
+  const total = m.total;
+  if (!(total > 0)) return features;
+  const count = Math.max(1, Math.min(maxArrows, Math.floor(total / NAV_ROUTE_ARROW_GAP_M)));
+  const gap = total / (count + 1);
+  for (let k = 1; k <= count; k += 1) {
+    const atMeters = gap * k;
+    const pt = G.pointAtRouteDistance(routePoints, atMeters, m);
+    if (!pt) continue;
     features.push({
       type: 'Feature',
-      geometry: {
-        type: 'Point',
-        coordinates: [
-          (a.longitude + b.longitude) / 2,
-          (a.latitude + b.latitude) / 2,
-        ],
+      geometry: { type: 'Point', coordinates: [pt.longitude, pt.latitude] },
+      properties: {
+        bearing: G.routeSegmentBearingAtDistance(routePoints, atMeters, m),
+        atMeters,
       },
-      properties: { bearing: G.bearingDegrees(a, b) },
     });
   }
   return features;
 }
 
+/** 当前路线的箭头锚点，导航中只做「走过就摘掉」，不重新分布 */
+let navArrowAnchors = [];
+
 function updateDirectionArrows(map, routePoints) {
   if (!map || !map.getSource('nav-direction-arrows')) return;
   const pts = Array.isArray(routePoints) ? routePoints : [];
+  navArrowAnchors = buildDirectionArrows(pts);
   map.getSource('nav-direction-arrows').setData({
     type: 'FeatureCollection',
-    features: buildDirectionArrows(pts),
+    features: navArrowAnchors,
+  });
+}
+
+/**
+ * 进度推进时只隐藏已走过的箭头，保留锚点原位。
+ * 旧实现按「剩余折线」均分，每帧都把箭头重排，看上去像箭头在路上滑动。
+ */
+function updateDirectionArrowsProgress(map, traveledMeters) {
+  if (!map || !map.getSource('nav-direction-arrows')) return;
+  const cut = Number.isFinite(traveledMeters) ? traveledMeters : 0;
+  map.getSource('nav-direction-arrows').setData({
+    type: 'FeatureCollection',
+    features: navArrowAnchors.filter((f) => (f.properties.atMeters || 0) > cut),
   });
 }
 
@@ -663,12 +683,7 @@ function updateRouteProgressByMeters(map, routePoints, traveledMeters, metrics) 
   if (!traveledSrc || !remainingSrc) return;
   traveledSrc.setData(traveled.length >= 2 ? lineFeature(traveled) : EMPTY_FC);
   remainingSrc.setData(remaining.length >= 2 ? lineFeature(remaining) : lineFeature(routePoints.map((p) => [p.longitude, p.latitude])));
-  if (remaining.length >= 2) {
-    const remainingPts = remaining.map(([lon, lat]) => ({ longitude: lon, latitude: lat }));
-    updateDirectionArrows(map, remainingPts);
-  } else {
-    updateDirectionArrows(map, routePoints);
-  }
+  updateDirectionArrowsProgress(map, clamped);
 }
 
 function updateRouteProgress(map, routePoints, progressPct) {
@@ -688,6 +703,7 @@ window.MapLayers = {
   ensureRoutePreviewLayer,
   buildDirectionArrows,
   updateDirectionArrows,
+  updateDirectionArrowsProgress,
   updateParkingLabelSizeByZoom,
   updateNavRouteArrowIconSize,
   highlightTargetSpace,
