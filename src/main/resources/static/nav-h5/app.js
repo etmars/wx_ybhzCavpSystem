@@ -53,8 +53,11 @@ let userInteractTimer = null;
 let parkingLabelRaf = 0;
 
 const USER_INTERACT_RESUME_MS = 3000;
+/** 程序化相机移动的标记：MapLibre 的 rotatestart/zoomstart/pitchstart 对 easeTo 同样会触发 */
+const CAMERA_EVENT_DATA = { navAuto: true };
 
-function markUserMapInteracting() {
+function markUserMapInteracting(e) {
+  if (e && e.navAuto) return;
   userMapInteracting = true;
   if (userInteractTimer) clearTimeout(userInteractTimer);
   userInteractTimer = setTimeout(() => {
@@ -161,8 +164,10 @@ async function resolveRoute() {
  * (top + h) / 2 = ratio * h  →  top = (2 * ratio - 1) * h。
  */
 function navCameraPadding() {
-  const h = map && map.getContainer() ? map.getContainer().clientHeight : 0;
-  if (!h) return { top: 0, bottom: 0, left: 0, right: 0 };
+  const el = (map && map.getContainer) ? map.getContainer() : null;
+  const h = el ? el.clientHeight : 0;
+  // 容器还没布局时不要把 padding 清零，否则蓝点会先跳回屏幕中央
+  if (!h) return (map && map.getPadding) ? map.getPadding() : { top: 0, bottom: 0, left: 0, right: 0 };
   const ratio = Math.min(0.9, Math.max(0.5, T.NAV_PUCK_SCREEN_RATIO || 0.68));
   return {
     top: Math.max(0, Math.round((2 * ratio - 1) * h)),
@@ -174,7 +179,7 @@ function navCameraPadding() {
 
 function applyNavCameraPadding() {
   if (!map) return;
-  map.setPadding(navCameraPadding());
+  map.setPadding(navCameraPadding(), CAMERA_EVENT_DATA);
 }
 
 function updateNavCamera(loc, cameraBearing, force, navParked) {
@@ -204,8 +209,9 @@ function updateNavCamera(loc, cameraBearing, force, navParked) {
     zoom: T.NAV_ZOOM,
     pitch: T.NAV_PITCH,
     bearing: br,
+    padding: navCameraPadding(),
     duration: force ? 0 : T.NAV_CAMERA_EASE_MS,
-  });
+  }, CAMERA_EVENT_DATA);
 }
 
 /**
@@ -227,7 +233,8 @@ function focusPreviewCamera() {
     zoom: T.PREVIEW_ZOOM,
     pitch: T.NAV_PITCH,
     bearing: previewCameraBearing(),
-  });
+    padding: navCameraPadding(),
+  }, CAMERA_EVENT_DATA);
 }
 
 function seedPuckAtRouteStart() {
@@ -306,8 +313,9 @@ function recenterCamera() {
       zoom: Math.max(T.NAV_ZOOM - 0.5, 18.5),
       pitch: T.NAV_PITCH,
       bearing: previewCameraBearing(),
+      padding: navCameraPadding(),
       duration: 300,
-    });
+    }, CAMERA_EVENT_DATA);
   }
 }
 
@@ -410,7 +418,13 @@ async function initMap() {
           activeLen: routePoints.length,
         });
       } else {
-        map.flyTo({ center: mapCenter, zoom: T.PREVIEW_ZOOM, pitch: T.NAV_PITCH, bearing: MAP_BEARING, duration: 0 });
+        map.flyTo({
+          center: mapCenter,
+          zoom: T.PREVIEW_ZOOM,
+          pitch: T.NAV_PITCH,
+          bearing: MAP_BEARING,
+          duration: 0,
+        }, CAMERA_EVENT_DATA);
       }
       postToMiniProgram({ type: 'h5Ready', routeOk: hasRoute });
       onDisplayFromHash(true);
