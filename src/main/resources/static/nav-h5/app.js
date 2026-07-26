@@ -14,9 +14,14 @@ const T = window.NavTuning;
 const TILES_BASE = Q.tiles_base || 'https://parkinglot.c-avp.com:9065/tiles';
 const MAP_ID = Q.map_id || 'gqyq';
 const TILES_USE_MAP_ID = Q.tiles_use_map_id !== '0';
-const TILES_URL = TILES_USE_MAP_ID
-  ? `${TILES_BASE}/{z}/{x}/{y}.pbf?map_id=${MAP_ID}`
-  : `${TILES_BASE}/{z}/{x}/{y}.pbf`;
+const TILES_V = (Q.tiles_v || '').trim();
+const TILES_URL = (() => {
+  const base = TILES_USE_MAP_ID
+    ? `${TILES_BASE}/{z}/{x}/{y}.pbf?map_id=${encodeURIComponent(MAP_ID)}`
+    : `${TILES_BASE}/{z}/{x}/{y}.pbf`;
+  if (!TILES_V) return base;
+  return `${base}${base.includes('?') ? '&' : '?'}v=${encodeURIComponent(TILES_V)}`;
+})();
 const MAP_BEARING = parseFloat(Q.map_bearing) || 0;
 const GEO_API = Q.geo_api || `https://parkinglot.c-avp.com:9065/api/maps/${MAP_ID}/geometry`;
 const ROUTE_API = Q.route_api || 'https://parkinglot.c-avp.com:9065/api/nav/route';
@@ -225,16 +230,24 @@ function previewCameraBearing() {
   return Number.isFinite(br) ? br : MAP_BEARING;
 }
 
-function focusPreviewCamera() {
-  if (!map || routePoints.length < 1) return;
+/**
+ * 起点相机：与导航态 updateNavCamera 用同一套 zoom/pitch/bearing/padding，
+ * 否则「继续导航」那一下视角会突然跳一档。
+ */
+function routeStartCameraOptions() {
   const start = routePoints[0];
-  map.jumpTo({
+  return {
     center: [start.longitude, start.latitude],
-    zoom: T.PREVIEW_ZOOM,
+    zoom: T.NAV_ZOOM,
     pitch: T.NAV_PITCH,
     bearing: previewCameraBearing(),
     padding: navCameraPadding(),
-  }, CAMERA_EVENT_DATA);
+  };
+}
+
+function focusPreviewCamera() {
+  if (!map || routePoints.length < 1) return;
+  map.jumpTo(routeStartCameraOptions(), CAMERA_EVENT_DATA);
 }
 
 function seedPuckAtRouteStart() {
@@ -307,15 +320,7 @@ function recenterCamera() {
     return;
   }
   if (routePoints.length >= 1) {
-    const start = routePoints[0];
-    map.easeTo({
-      center: [start.longitude, start.latitude],
-      zoom: Math.max(T.NAV_ZOOM - 0.5, 18.5),
-      pitch: T.NAV_PITCH,
-      bearing: previewCameraBearing(),
-      padding: navCameraPadding(),
-      duration: 300,
-    }, CAMERA_EVENT_DATA);
+    map.easeTo({ ...routeStartCameraOptions(), duration: 300 }, CAMERA_EVENT_DATA);
   }
 }
 
@@ -365,7 +370,7 @@ async function initMap() {
     container: 'map',
     style,
     center,
-    zoom: T.PREVIEW_ZOOM,
+    zoom: T.NAV_ZOOM,
     maxZoom: 21,
     minZoom: 16,
     pitch: T.NAV_PITCH,
@@ -420,7 +425,7 @@ async function initMap() {
       } else {
         map.flyTo({
           center: mapCenter,
-          zoom: T.PREVIEW_ZOOM,
+          zoom: T.NAV_ZOOM,
           pitch: T.NAV_PITCH,
           bearing: MAP_BEARING,
           duration: 0,

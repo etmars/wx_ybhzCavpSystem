@@ -33,7 +33,8 @@ public class MbtilesService {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body("no mbtiles".getBytes());
         }
         try {
-            Connection conn = connections.computeIfAbsent(map.id(), id -> open(map.mbtilesFile()));
+            Path mbtiles = map.mbtilesFile();
+            Connection conn = connections.computeIfAbsent(map.id(), id -> open(mbtiles));
             if (conn == null) {
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).body("no mbtiles db".getBytes());
             }
@@ -51,7 +52,15 @@ public class MbtilesService {
                     HttpHeaders headers = new HttpHeaders();
                     headers.setContentType(MediaType.parseMediaType("application/x-protobuf"));
                     headers.set(HttpHeaders.CONTENT_ENCODING, "gzip");
-                    headers.setCacheControl("public, max-age=3600");
+                    // deploy/sync 换文件后须立即失效；ETag=mtime-size
+                    headers.setCacheControl("public, max-age=0, must-revalidate");
+                    try {
+                        long mtime = Files.getLastModifiedTime(mbtiles).toMillis();
+                        long size = Files.size(mbtiles);
+                        headers.setETag("\"" + mtime + "-" + size + "\"");
+                    } catch (Exception ignored) {
+                        // ETag 可选
+                    }
                     headers.setAccessControlAllowOrigin("*");
                     return new ResponseEntity<>(bytes, headers, HttpStatus.OK);
                 }
