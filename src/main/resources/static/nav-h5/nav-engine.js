@@ -171,9 +171,11 @@
           state.navTurnReleasedCpIdx = Math.max(state.navTurnReleasedCpIdx, i);
           continue;
         }
-        const ceiling = state.navTurnHoldCpIdx === i
-          ? Math.min(Math.max(0, cp.progressMeters - T.CHECKPOINT_HOLD_BEFORE_M), cp.progressMeters)
-          : cp.progressMeters;
+        // 未放行时封顶在 hold 闸门，禁止先过弯心再往回钉
+        const ceiling = Math.min(
+          Math.max(0, cp.progressMeters - T.CHECKPOINT_HOLD_BEFORE_M),
+          cp.progressMeters,
+        );
         let v = Math.min(progressMeters, ceiling);
         const holdCap = turnHoldProgressCapMeters();
         if (holdCap != null) v = Math.min(v, holdCap);

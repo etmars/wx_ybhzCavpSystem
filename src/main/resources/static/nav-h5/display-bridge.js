@@ -55,13 +55,36 @@
   }
 
   function decodeDisplayMeta(hash) {
-    if (!hash) return { display: null, recenter: false };
+    if (!hash) {
+      return {
+        display: null, recenter: false, promote: false, promoteBlue: false, reloadRoute: false,
+        promoteActiveLen: 0, jlat: NaN, jlon: NaN,
+      };
+    }
     const raw = hash.startsWith('#') ? hash.slice(1) : hash;
     const recenter = /(?:^|&)rc=1(?:&|$)/.test(raw);
+    const promote = /(?:^|&)promote=1(?:&|$)/.test(raw);
+    const promoteBlue = /(?:^|&)promoteBlue=1(?:&|$)/.test(raw);
+    const reloadRoute = /(?:^|&)reloadRoute=1(?:&|$)/.test(raw);
+    let promoteActiveLen = 0;
+    const alM = raw.match(/(?:^|&)al=(\d+)(?:&|$)/);
+    if (alM) promoteActiveLen = parseInt(alM[1], 10) || 0;
+    let jlat = NaN;
+    let jlon = NaN;
+    const jlatM = raw.match(/(?:^|&)jlat=([-0-9.]+)(?:&|$)/);
+    const jlonM = raw.match(/(?:^|&)jlon=([-0-9.]+)(?:&|$)/);
+    if (jlatM) jlat = parseFloat(jlatM[1]);
+    if (jlonM) jlon = parseFloat(jlonM[1]);
     const compact = parseDisplayHash(hash);
     return {
       display: compact ? expandToH5Display(compact) : null,
       recenter: recenter || !!(compact && compact.rc),
+      promote,
+      promoteBlue,
+      reloadRoute,
+      promoteActiveLen,
+      jlat,
+      jlon,
     };
   }
 

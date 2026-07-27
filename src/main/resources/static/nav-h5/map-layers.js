@@ -427,6 +427,7 @@ function ensureNavRouteLayers(map, routePoints) {
     }, 'nav-route-line');
   } else {
     map.getSource('nav-route-source').setData(fullLine);
+    map.getSource('nav-route-traveled-source').setData(EMPTY_FC);
     map.getSource('nav-route-remaining-source').setData(fullLine);
     map.getSource('nav-route-end-source').setData(endPoint);
   }
@@ -474,6 +475,19 @@ function ensureRoutePreviewLayer(map, previewPoints) {
   } else {
     map.getSource('nav-route-preview-source').setData(line);
   }
+  if (map.getLayer('nav-route-preview')) {
+    map.setLayoutProperty('nav-route-preview', 'visibility', 'visible');
+  }
+}
+
+/** 同图续航：灰线已提升为蓝线后清掉预览层 */
+function clearRoutePreviewLayer(map) {
+  if (!map) return;
+  const src = map.getSource('nav-route-preview-source');
+  if (src) src.setData(EMPTY_FC);
+  if (map.getLayer('nav-route-preview')) {
+    map.setLayoutProperty('nav-route-preview', 'visibility', 'none');
+  }
 }
 
 /** 对齐 updateParkingLabelSizeByZoom，H5 web-view 略小于 Android 但比旧版稍大 */
@@ -486,6 +500,10 @@ function updateParkingLabelSizeByZoom(map) {
   const maxSize = 0.46;
   const t = Math.max(0, Math.min(1, (z - minZoom) / (maxZoom - minZoom)));
   const size = minSize + (maxSize - minSize) * t;
+  // setLayoutProperty 会让 MapLibre 重建该层所有瓦片的 symbol bucket 并重跑碰撞排布，
+  // 值没变时绝不能碰（导航中 zoom 恒定，否则等于每帧白重建一次）。
+  const cur = map.getLayoutProperty('parking-label', 'icon-size');
+  if (typeof cur === 'number' && Math.abs(cur - size) < 0.005) return;
   map.setLayoutProperty('parking-label', 'icon-size', size);
 }
 
@@ -701,6 +719,7 @@ window.MapLayers = {
   updateKnnRawMarker,
   ensureNavRouteLayers,
   ensureRoutePreviewLayer,
+  clearRoutePreviewLayer,
   buildDirectionArrows,
   updateDirectionArrows,
   updateDirectionArrowsProgress,
