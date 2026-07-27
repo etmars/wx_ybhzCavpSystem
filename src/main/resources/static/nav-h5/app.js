@@ -48,6 +48,8 @@ let previewPoints = [];
 /** 同图完整折线（当前蓝 + 灰预览），续航切段时从衔接点切开 */
 let allRoutePoints = [];
 let routeMetrics = { cumulative: [0], total: 0 };
+/** 刚完成同图续航换线：用于丢掉上一段残留的大 prog，避免新蓝线被立刻「走完」消失 */
+let promoteGuardUntilMs = 0;
 let destination = null;
 let map = null;
 let mapCenter = null;
@@ -274,13 +276,6 @@ function applyAheadAsNavRoute(aheadAll, nextActiveLen, junction) {
     renderPose.lat = anchor.latitude;
     renderPose.hdg = br;
     renderPose.prog = 0;
-    if (map) {
-      MapLayers.ensureUserPuckLayers(
-        map,
-        [renderPose.lon, renderPose.lat],
-        headingForMapIcon(br),
-      );
-    }
   } else if (anchor) {
     renderPose = {
       lon: anchor.longitude,
@@ -289,22 +284,25 @@ function applyAheadAsNavRoute(aheadAll, nextActiveLen, junction) {
       cam: previewCameraBearing(),
       prog: 0,
     };
-    if (map) {
-      MapLayers.ensureUserPuckLayers(
-        map,
-        [renderPose.lon, renderPose.lat],
-        headingForMapIcon(br),
-      );
-    }
+  }
+  // 换线后无论 freeze/挪点，都保证蓝点图层存在并贴到当前位姿
+  if (map && renderPose) {
+    MapLayers.ensureUserPuckLayers(
+      map,
+      [renderPose.lon, renderPose.lat],
+      headingForMapIcon(renderPose.hdg),
+    );
   }
   if (lastDisplay) {
     lastDisplay.progressMeters = 0;
     lastDisplay.navigating = true;
   }
   navigating = true;
+  promoteGuardUntilMs = nowMs() + 2500;
   camDiag('applyAhead',
     `alIn=${al} alOut=${ACTIVE_LEN} junc=${fmtLL(junction)}`
-    + ` ahead=${routeEnds(aheadAll)} blue=${routeEnds(routePoints)} gray=${routeEnds(previewPoints)}`);
+    + ` ahead=${routeEnds(aheadAll)} blue=${routeEnds(routePoints)} gray=${routeEnds(previewPoints)}`
+    + ` total=${routeMetrics.total.toFixed(1)}m guard=2500ms`);
   return true;
 }
 
@@ -340,6 +338,24 @@ function promotePreviewToBlue(nextActiveLen, junction) {
     if (idx >= 0 && idx < merged.length - 1) {
       ahead = merged.slice(idx);
       src = `merge@${idx}`;
+    }
+  }
+
+  // 已换过线：当前蓝线已从衔接点起，勿再 fail→reload 把线打没
+  if ((!ahead || ahead.length < 2) && junction && routePoints.length >= 2) {
+    const d0 = window.NavGeo.distanceMeters(routePoints[0], junction);
+    if (d0 <= 40) {
+      camDiag('promoteBlue ALREADY',
+        `blue0 near junc ${d0.toFixed(1)}m ${routeEnds(routePoints)}`);
+      if (map) {
+        MapLayers.ensureNavRouteLayers(map, routePoints);
+        if (typeof MapLayers.updateRouteProgressByMeters === 'function') {
+          MapLayers.updateRouteProgressByMeters(map, routePoints, 0, routeMetrics);
+        }
+      }
+      promoteGuardUntilMs = nowMs() + 2500;
+      navigating = true;
+      return true;
     }
   }
 
@@ -589,10 +605,15 @@ function focusPreviewCamera() {
 
 function seedPuckAtRouteStart() {
   if (!map || !routePoints.length) return;
-  // 同 focusPreview：切图后 idle/晚到回调绝不能把中途位姿清零
+  // resolveRoute 等待期间 hash 可能已把 navigating/prog 拉起来：
+  // 禁止把位姿打回起点，但仍必须创建 user-loc 图层，否则 updateUserPuck 会空转，蓝点永久消失。
   if (navigating || (renderPose && renderPose.prog > 0.5)) {
-    camDiag('seedPuck BLOCKED',
-      `reason=${navigating ? 'navigating' : 'prog>0.5'}`);
+    const lon = renderPose ? renderPose.lon : routePoints[0].longitude;
+    const lat = renderPose ? renderPose.lat : routePoints[0].latitude;
+    const hdg = renderPose ? renderPose.hdg : 0;
+    MapLayers.ensureUserPuckLayers(map, [lon, lat], headingForMapIcon(hdg));
+    camDiag('seedPuck ENSURE',
+      `reason=${navigating ? 'navigating' : 'prog>0.5'} at=${fmtLL({ latitude: lat, longitude: lon })}`);
     return;
   }
   camDiag('seedPuck APPLY', 'renderPose→0');
@@ -625,7 +646,15 @@ function headingForMapIcon(trueNorthHeading) {
 }
 
 function updateUserPuck(loc, bearing) {
-  if (!map || !loc || !map.getSource('user-loc-source')) return;
+  if (!map || !loc) return;
+  if (!map.getSource('user-loc-source')) {
+    MapLayers.ensureUserPuckLayers(
+      map,
+      [loc.longitude, loc.latitude],
+      headingForMapIcon(bearing),
+    );
+    return;
+  }
   map.getSource('user-loc-source').setData({
     type: 'Feature',
     geometry: { type: 'Point', coordinates: [loc.longitude, loc.latitude] },
@@ -710,6 +739,20 @@ function applyDisplayState(display, forceCamera) {
     prog: Number(display.progressMeters) || 0,
   };
   if (!Number.isFinite(target.lon) || !Number.isFinite(target.lat)) return;
+
+  // 续航后上一段残留大 prog 套到新短线上会把 remaining 切到终点 → 蓝线闪一下消失
+  const routeTotal = routeMetrics && routeMetrics.total > 0 ? routeMetrics.total : 0;
+  if (routeTotal > 0 && target.prog > routeTotal + 5) {
+    camDiag('progSTALE',
+      `${target.prog.toFixed(1)} > total ${routeTotal.toFixed(1)} → 0`);
+    target.prog = 0;
+  } else if (promoteGuardUntilMs && nowMs() < promoteGuardUntilMs && routeTotal > 0) {
+    if (target.prog > Math.max(8, routeTotal * 0.35)) {
+      camDiag('progGUARD',
+        `${target.prog.toFixed(1)} too large in guard → 0 (total ${routeTotal.toFixed(1)})`);
+      target.prog = 0;
+    }
+  }
 
   const recvMs = nowMs();
   const gapMs = lastPoseRecvMs > 0 ? recvMs - lastPoseRecvMs : 0;
@@ -804,11 +847,17 @@ function onDisplayFromHash(forceCamera) {
       + ` allPts=${allRoutePoints.length} blueWas=${routeEnds(routePoints)}`
       + ` grayWasEnds=${routeEnds(previewPoints)}`);
     let ok = promotePreviewToBlue(meta.promoteActiveLen, junc);
+    // 仅在站内切线失败时才 reload；成功后再 reload 容易把刚画上的蓝线冲掉
     if (!ok) {
       ok = await reloadRouteInPlace(meta.promoteActiveLen, junc);
     }
+    if (ok && map && routePoints.length >= 2) {
+      // 换线后先钉在 prog=0，再吃 display，避免脏 prog 把蓝线切没
+      MapLayers.updateRouteProgressByMeters(map, routePoints, 0, routeMetrics);
+    }
     camDiag('hashPromoteBlue done',
-      `ok=${ok} blue=${routeEnds(routePoints)} gray=${routeEnds(previewPoints)}`);
+      `ok=${ok} blue=${routeEnds(routePoints)} gray=${routeEnds(previewPoints)}`
+      + ` total=${(routeMetrics.total || 0).toFixed(1)}`);
     return ok;
   };
 
