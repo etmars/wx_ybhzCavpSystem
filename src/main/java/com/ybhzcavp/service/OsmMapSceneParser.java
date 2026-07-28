@@ -17,6 +17,7 @@ import java.util.Map;
 
 /**
  * 从 OSM 解析室内地图全图层（对齐 Android mbtiles / MainActivity.addRenderLayers）。
+ * 若存在绘制范围（sType=0, id=1000），几何输出裁到该范围内（与 preprocess 瓦片裁切一致）。
  */
 public final class OsmMapSceneParser {
 
@@ -220,6 +221,20 @@ public final class OsmMapSceneParser {
         }
 
         MapScene build() {
+            List<double[][]> scopePolys = new ArrayList<>();
+            for (Way way : ways) {
+                if (!"0".equals(way.tags.get("sType"))) continue;
+                if (!"1000".equals(String.valueOf(way.tags.getOrDefault("id", "")).trim())) continue;
+                List<double[]> coords = resolveCoords(way);
+                if (isClosed(way) && coords.size() >= 3) {
+                    scopePolys.add(toArray(coords));
+                }
+            }
+            boolean clip = !scopePolys.isEmpty();
+            if (clip) {
+                log.info("OSM scene scope clip: {} polygon(s) (sType=0,id=1000)", scopePolys.size());
+            }
+
             List<double[][]> road2005 = new ArrayList<>();
             List<double[][]> road2005Ramp = new ArrayList<>();
             List<double[][]> room2008 = new ArrayList<>();
@@ -237,62 +252,67 @@ public final class OsmMapSceneParser {
             for (Way way : ways) {
                 String sType = way.tags.get("sType");
                 if (sType == null) continue;
+                if ("0".equals(sType)) continue;
                 List<double[]> coords = resolveCoords(way);
                 if (coords.isEmpty()) continue;
+                double[][] ring = toArray(coords);
+                if (clip && !ringIntersectsScope(ring, scopePolys)) continue;
 
                 switch (sType) {
                     case "2005" -> {
                         if (isClosed(way) && coords.size() >= 3) {
                             if ("yes".equalsIgnoreCase(way.tags.get("ramp"))) {
-                                road2005Ramp.add(toArray(coords));
+                                road2005Ramp.add(ring);
                             } else {
-                                road2005.add(toArray(coords));
+                                road2005.add(ring);
                             }
                         }
                     }
                     case "2008" -> {
                         if (isClosed(way) && coords.size() >= 3) {
-                            room2008.add(toArray(coords));
+                            room2008.add(ring);
                         }
                     }
                     case "1002" -> {
                         if (isClosed(way) && coords.size() >= 3) {
-                            parkingFill.add(toArray(coords));
-                            parkingEdge.add(toArray(coords));
+                            parkingFill.add(ring);
+                            parkingEdge.add(ring);
                             String label = way.tags.getOrDefault("name", way.tags.get("id"));
                             double[] c = centroid(coords);
-                            parkingLabels.add(new LabelPoint(c[0], c[1], label != null ? label : "", way.tags.get("id")));
+                            if (!clip || pointInAnyScope(c[0], c[1], scopePolys)) {
+                                parkingLabels.add(new LabelPoint(c[0], c[1], label != null ? label : "", way.tags.get("id")));
+                            }
                         }
                     }
                     case "1001" -> {
                         if (coords.size() >= 3) {
-                            arrow1001.add(toArray(coords));
+                            arrow1001.add(ring);
                         }
                     }
                     case "1000" -> {
                         if (isClosed(way) && coords.size() >= 3) {
-                            walls1000.add(toArray(coords));
+                            walls1000.add(ring);
                         } else if (coords.size() >= 2) {
-                            walls1000.add(toArray(coords));
+                            walls1000.add(ring);
                         }
                     }
                     case "100202" -> {
                         if (isClosed(way) && coords.size() >= 3) {
-                            blocker100202.add(toArray(coords));
-                            blocker100202Edge.add(toArray(coords));
+                            blocker100202.add(ring);
+                            blocker100202Edge.add(ring);
                         } else if (coords.size() >= 2) {
-                            blocker100202Edge.add(toArray(coords));
+                            blocker100202Edge.add(ring);
                         }
                     }
                     case "1003" -> {
                         if (coords.size() >= 3) {
-                            speedBumps1003.add(toArray(coords));
+                            speedBumps1003.add(ring);
                         }
                     }
                     case "1004" -> {
                         // 车道线：开放折线，nd 顺序即数字化方向（direction=2 顺向）
                         if (coords.size() >= 2) {
-                            lane1004.add(toArray(coords));
+                            lane1004.add(ring);
                         }
                     }
                     default -> {
@@ -305,6 +325,7 @@ public final class OsmMapSceneParser {
                 if (sType == null) continue;
                 double[] p = nodes.get(e.getKey());
                 if (p == null) continue;
+                if (clip && !pointInAnyScope(p[0], p[1], scopePolys)) continue;
                 if ("1002".equals(sType) || "1001".equals(sType) || "2005".equals(sType)) {
                     String name = e.getValue().getOrDefault("name", e.getValue().get("id"));
                     poiPoints.add(new LabelPoint(p[0], p[1], name != null ? name : "", e.getValue().get("id")));
@@ -355,6 +376,47 @@ public final class OsmMapSceneParser {
             }
             int n = coords.size();
             return new double[]{lat / n, lon / n};
+        }
+
+        /** 任一顶点或质心落在绘制范围内则保留（与预处理「范围外不渲染」对齐）。 */
+        private static boolean ringIntersectsScope(double[][] ring, List<double[][]> scopes) {
+            if (scopes == null || scopes.isEmpty()) return true;
+            if (ring == null || ring.length == 0) return false;
+            for (double[] p : ring) {
+                if (p != null && p.length >= 2 && pointInAnyScope(p[0], p[1], scopes)) {
+                    return true;
+                }
+            }
+            double lat = 0, lon = 0;
+            int n = 0;
+            for (double[] p : ring) {
+                if (p == null || p.length < 2) continue;
+                lat += p[0];
+                lon += p[1];
+                n++;
+            }
+            return n > 0 && pointInAnyScope(lat / n, lon / n, scopes);
+        }
+
+        private static boolean pointInAnyScope(double lat, double lon, List<double[][]> scopes) {
+            for (double[][] scope : scopes) {
+                if (pointInPolygon(lat, lon, scope)) return true;
+            }
+            return false;
+        }
+
+        /** 射线法；ring 顶点为 [lat, lon]。 */
+        private static boolean pointInPolygon(double lat, double lon, double[][] ring) {
+            if (ring == null || ring.length < 3) return false;
+            boolean inside = false;
+            for (int i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+                double latI = ring[i][0], lonI = ring[i][1];
+                double latJ = ring[j][0], lonJ = ring[j][1];
+                boolean intersect = ((lonI > lon) != (lonJ > lon))
+                        && (lat < (latJ - latI) * (lon - lonI) / (lonJ - lonI + 0.0) + latI);
+                if (intersect) inside = !inside;
+            }
+            return inside;
         }
     }
 
