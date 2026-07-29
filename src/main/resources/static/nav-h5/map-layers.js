@@ -567,18 +567,58 @@ function updateDirectionArrowsProgress(map, traveledMeters) {
   });
 }
 
+const TARGET_SPACE_LAYER_ID = 'target-space-layer';
+const TARGET_SPACE_OPACITY_MIN = 0.25;
+const TARGET_SPACE_OPACITY_MAX = 0.95;
+const TARGET_SPACE_BREATH_HALF_MS = 900;
+let targetSpaceBreathFrame = 0;
+
+function stopTargetSpaceHighlightBreathing() {
+  if (targetSpaceBreathFrame) {
+    cancelAnimationFrame(targetSpaceBreathFrame);
+    targetSpaceBreathFrame = 0;
+  }
+}
+
+/** 对齐 Android：白色填充在 0.25~0.95 间以 900ms 半周期往返呼吸。 */
+function startTargetSpaceHighlightBreathing(map) {
+  stopTargetSpaceHighlightBreathing();
+  const startedAt = performance.now();
+  const animate = (now) => {
+    if (!map || !map.getLayer(TARGET_SPACE_LAYER_ID)) {
+      targetSpaceBreathFrame = 0;
+      return;
+    }
+    const phase = ((now - startedAt) % (TARGET_SPACE_BREATH_HALF_MS * 2))
+      / TARGET_SPACE_BREATH_HALF_MS;
+    const reverseProgress = phase <= 1 ? phase : 2 - phase;
+    // AccelerateDecelerateInterpolator：慢入慢出，与 Android ValueAnimator 一致。
+    const eased = (1 - Math.cos(Math.PI * reverseProgress)) / 2;
+    const opacity = TARGET_SPACE_OPACITY_MIN
+      + (TARGET_SPACE_OPACITY_MAX - TARGET_SPACE_OPACITY_MIN) * eased;
+    map.setPaintProperty(TARGET_SPACE_LAYER_ID, 'fill-opacity', opacity);
+    targetSpaceBreathFrame = requestAnimationFrame(animate);
+  };
+  targetSpaceBreathFrame = requestAnimationFrame(animate);
+}
+
 function highlightTargetSpace(map, spaceId) {
   if (!spaceId || !map.getSource('parking-source')) return;
-  const layerId = 'target-space-layer';
-  if (map.getLayer(layerId)) map.removeLayer(layerId);
-  map.addLayer({
-    id: layerId,
+  stopTargetSpaceHighlightBreathing();
+  if (map.getLayer(TARGET_SPACE_LAYER_ID)) map.removeLayer(TARGET_SPACE_LAYER_ID);
+  addLayerAbove(map, {
+    id: TARGET_SPACE_LAYER_ID,
     type: 'fill',
     source: 'parking-source',
     'source-layer': 'parking_fill',
     filter: ['all', ['==', ['get', 'name'], spaceId]],
-    paint: { 'fill-color': '#FFFFFF', 'fill-opacity': 0.45 },
+    paint: {
+      'fill-color': '#FFFFFF',
+      'fill-opacity': TARGET_SPACE_OPACITY_MIN,
+      'fill-antialias': true,
+    },
   }, 'parking-fill');
+  startTargetSpaceHighlightBreathing(map);
 }
 
 function ensureDestPinLayer(map, destination, spaceId) {
@@ -726,6 +766,7 @@ window.MapLayers = {
   updateParkingLabelSizeByZoom,
   updateNavRouteArrowIconSize,
   highlightTargetSpace,
+  stopTargetSpaceHighlightBreathing,
   ensureDestPinLayer,
   ensureWaypointPinLayer,
   updateRouteProgress,
