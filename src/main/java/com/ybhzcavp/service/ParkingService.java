@@ -36,15 +36,22 @@ public class ParkingService {
     private final AppProperties props;
     private final MapDataService mapDataService;
     private final DispatchRouter dispatchRouter;
+    private final ParkinglotMachineAuth machineAuth;
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(8))
             .build();
     private JsonNode avpRouteCache;
 
-    public ParkingService(AppProperties props, MapDataService mapDataService, DispatchRouter dispatchRouter) {
+    public ParkingService(
+            AppProperties props,
+            MapDataService mapDataService,
+            DispatchRouter dispatchRouter,
+            ParkinglotMachineAuth machineAuth
+    ) {
         this.props = props;
         this.mapDataService = mapDataService;
         this.dispatchRouter = dispatchRouter;
+        this.machineAuth = machineAuth;
     }
 
     @PostConstruct
@@ -103,7 +110,7 @@ public class ParkingService {
             String base = props.getParking().getApiBaseUrl().replaceAll("/$", "");
             String url = base + "/api/maps?parking_lot_id="
                     + URLEncoder.encode(lotId, StandardCharsets.UTF_8);
-            HttpRequest req = HttpRequest.newBuilder(URI.create(url))
+            HttpRequest req = machineAuth.authorize(HttpRequest.newBuilder(URI.create(url)))
                     .timeout(Duration.ofSeconds(15))
                     .GET()
                     .build();

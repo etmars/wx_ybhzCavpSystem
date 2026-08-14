@@ -30,14 +30,17 @@ public class GrouteProxyService {
         this.props = props;
     }
 
-    public ResponseEntity<byte[]> fetchLiveGroute(String vehicleId) {
+    public ResponseEntity<byte[]> fetchLiveGroute(String vehicleId, String authorization) {
         String base = props.getParking().getApiBaseUrl().replaceAll("/$", "");
         String url = base + "/avp/groute?vehicleId=" + URLEncoder.encode(vehicleId, StandardCharsets.UTF_8);
         try {
-            HttpRequest req = HttpRequest.newBuilder(URI.create(url))
+            HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url))
                     .timeout(Duration.ofSeconds(15))
-                    .GET()
-                    .build();
+                    .GET();
+            if (authorization != null && !authorization.isBlank()) {
+                builder.header("Authorization", authorization);
+            }
+            HttpRequest req = builder.build();
             HttpResponse<byte[]> resp = client.send(req, HttpResponse.BodyHandlers.ofByteArray());
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);

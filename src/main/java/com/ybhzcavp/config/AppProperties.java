@@ -130,7 +130,7 @@ public class AppProperties {
         private double parkingLng = 116.4915732;
         private double parkingLat = 39.7305491;
         /** 对齐 Android PARKING_API_BASE_URL，H5 groute 代理转发目标 */
-        private String apiBaseUrl = "http://parkinglot.c-avp.com:3000";
+        private String apiBaseUrl = "https://parkinglot.c-avp.com:3050";
 
         public String getApiBaseUrl() {
             return apiBaseUrl;

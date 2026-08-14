@@ -52,15 +52,22 @@ public class MapAssetSyncService implements ApplicationRunner {
     private final AppProperties props;
     private final MapDataService mapDataService;
     private final MbtilesService mbtilesService;
+    private final ParkinglotMachineAuth machineAuth;
     private final HttpClient client = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(15))
             .followRedirects(HttpClient.Redirect.NORMAL)
             .build();
 
-    public MapAssetSyncService(AppProperties props, MapDataService mapDataService, MbtilesService mbtilesService) {
+    public MapAssetSyncService(
+            AppProperties props,
+            MapDataService mapDataService,
+            MbtilesService mbtilesService,
+            ParkinglotMachineAuth machineAuth
+    ) {
         this.props = props;
         this.mapDataService = mapDataService;
         this.mbtilesService = mbtilesService;
+        this.machineAuth = machineAuth;
     }
 
     @Override
@@ -211,10 +218,7 @@ public class MapAssetSyncService implements ApplicationRunner {
         for (String lotId : lotIds) {
             String url = parking + "/api/maps?parking_lot_id="
                     + URLEncoder.encode(lotId, StandardCharsets.UTF_8);
-            HttpRequest req = HttpRequest.newBuilder(URI.create(url))
-                    .timeout(Duration.ofSeconds(30))
-                    .GET()
-                    .build();
+            HttpRequest req = parkingRequest(url);
             HttpResponse<String> resp = client.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             if (resp.statusCode() != 200) {
                 log.warn("maps HTTP {} for lot={} url={}", resp.statusCode(), lotId, url);
@@ -238,10 +242,7 @@ public class MapAssetSyncService implements ApplicationRunner {
 
     private List<String> fetchParkingLotIds(String parkingBase) throws Exception {
         String url = parkingBase + "/api/parking-lots";
-        HttpRequest req = HttpRequest.newBuilder(URI.create(url))
-                .timeout(Duration.ofSeconds(30))
-                .GET()
-                .build();
+        HttpRequest req = parkingRequest(url);
         HttpResponse<String> resp = client.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
         if (resp.statusCode() != 200) {
             throw new IllegalStateException("parking-lots HTTP " + resp.statusCode() + " url=" + url);
@@ -258,6 +259,13 @@ public class MapAssetSyncService implements ApplicationRunner {
             }
         }
         return ids;
+    }
+
+    private HttpRequest parkingRequest(String url) throws Exception {
+        return machineAuth.authorize(HttpRequest.newBuilder(URI.create(url)))
+                .timeout(Duration.ofSeconds(30))
+                .GET()
+                .build();
     }
 
     private static CatalogEntry parseMapRow(JsonNode n) {

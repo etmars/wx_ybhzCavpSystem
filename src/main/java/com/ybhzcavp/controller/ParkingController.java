@@ -8,6 +8,7 @@ import com.ybhzcavp.service.GrouteProxyService;
 import com.ybhzcavp.service.ParkingService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -76,8 +77,11 @@ public class ParkingController {
 
     /** H5 同源拉取 :3000 实时 groute（与 Home 页预览一致） */
     @GetMapping("/api/avp/groute-live")
-    public ResponseEntity<byte[]> grouteLive(@RequestParam String vehicleId) {
-        return grouteProxyService.fetchLiveGroute(vehicleId);
+    public ResponseEntity<byte[]> grouteLive(
+            @RequestParam String vehicleId,
+            @RequestHeader(name = "Authorization", required = false) String authorization
+    ) {
+        return grouteProxyService.fetchLiveGroute(vehicleId, authorization);
     }
 
     @GetMapping("/api/avp/assignment")
@@ -87,7 +91,10 @@ public class ParkingController {
 
     /** H5 导航进度上报，转发至 :3000 /avp/location */
     @PostMapping("/avp/location")
-    public ResponseEntity<byte[]> avpLocation(@RequestBody String body) {
-        return avpLocationProxyService.postLocation(body);
+    public ResponseEntity<byte[]> avpLocation(
+            @RequestBody String body,
+            @RequestHeader(name = "Authorization", required = false) String authorization
+    ) {
+        return avpLocationProxyService.postLocation(body, authorization);
     }
 }

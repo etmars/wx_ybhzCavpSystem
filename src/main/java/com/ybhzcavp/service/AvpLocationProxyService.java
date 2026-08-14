@@ -29,15 +29,18 @@ public class AvpLocationProxyService {
         this.props = props;
     }
 
-    public ResponseEntity<byte[]> postLocation(String body) {
+    public ResponseEntity<byte[]> postLocation(String body, String authorization) {
         String base = props.getParking().getApiBaseUrl().replaceAll("/$", "");
         String url = base + "/avp/location";
         try {
-            HttpRequest req = HttpRequest.newBuilder(URI.create(url))
+            HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url))
                     .timeout(Duration.ofSeconds(15))
                     .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(body == null ? "{}" : body, StandardCharsets.UTF_8))
-                    .build();
+                    .POST(HttpRequest.BodyPublishers.ofString(body == null ? "{}" : body, StandardCharsets.UTF_8));
+            if (authorization != null && !authorization.isBlank()) {
+                builder.header("Authorization", authorization);
+            }
+            HttpRequest req = builder.build();
             HttpResponse<byte[]> resp = client.send(req, HttpResponse.BodyHandlers.ofByteArray());
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
