@@ -131,6 +131,48 @@ public class ParkingService {
         return fallbackMapsFromLocalCache();
     }
 
+    /**
+     * 同源转发 parkinglot 特别点位，避免 nav-h5 暴露机器凭据或跨域访问业务服务。
+     */
+    public ObjectNode specialPoints(String mapId) {
+        String normalizedMapId = mapId == null ? "" : mapId.trim();
+        ObjectNode fallback = MAPPER.createObjectNode();
+        fallback.put("ok", false);
+        fallback.put("code", 502);
+        fallback.put("mapId", normalizedMapId);
+        fallback.set("data", MAPPER.createArrayNode());
+        if (normalizedMapId.isBlank()) {
+            fallback.put("code", 400);
+            fallback.put("msg", "mapId is required");
+            return fallback;
+        }
+        try {
+            String base = props.getParking().getApiBaseUrl().replaceAll("/$", "");
+            String url = base + "/api/maps/special-points?map_id="
+                    + URLEncoder.encode(normalizedMapId, StandardCharsets.UTF_8);
+            HttpRequest req = machineAuth.authorize(HttpRequest.newBuilder(URI.create(url)))
+                    .timeout(Duration.ofSeconds(15))
+                    .GET()
+                    .build();
+            HttpResponse<String> resp = httpClient.send(
+                    req,
+                    HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
+            );
+            if (resp.statusCode() == 200) {
+                JsonNode body = MAPPER.readTree(resp.body());
+                if (body.isObject()) {
+                    return (ObjectNode) body;
+                }
+            }
+            log.warn("parkinglot special-points HTTP {} for map={}", resp.statusCode(), normalizedMapId);
+            fallback.put("msg", "parkinglot special-points HTTP " + resp.statusCode());
+        } catch (Exception e) {
+            log.warn("parkinglot special-points proxy failed map={}: {}", normalizedMapId, e.getMessage());
+            fallback.put("msg", "parkinglot special-points unavailable");
+        }
+        return fallback;
+    }
+
     private ArrayNode fallbackMapsFromLocalCache() {
         ArrayNode arr = MAPPER.createArrayNode();
         for (MapDataService.MapEntry map : mapDataService.listMaps()) {

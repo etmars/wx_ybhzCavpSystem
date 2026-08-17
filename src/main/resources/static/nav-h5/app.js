@@ -28,6 +28,9 @@ const ROUTE_API = Q.route_api || 'https://parkinglot.c-avp.com:9065/api/nav/rout
 const API_BASE = Q.api_base || window.location.origin;
 const NAV_FLOW = Q.nav_flow || 'PARKING_ENTRY';
 const AUTO_START = Q.auto_start === '1';
+const STRUCTURE_3D_ENABLED = Q.structures_3d !== '0';
+const STRUCTURE_DEFER_MS = Math.max(0, parseInt(Q.structures_defer_ms || '800', 10) || 0);
+const STRUCTURE_MAX_POINTS = Math.max(1, parseInt(Q.structures_max_points || '36', 10) || 36);
 
 const SPACE_ID = Q.space_id || '';
 const SESSION_ID = Q.session_id || 'default';
@@ -70,6 +73,7 @@ let lastPoseRecvMs = 0;
 let lastRouteProgressDrawMs = 0;
 let cachedPadding = null;
 let cachedPaddingHeight = -1;
+let structureLoadTimer = null;
 
 const USER_INTERACT_RESUME_MS = 3000;
 const POSE_TWEEN_MIN_MS = 60;
@@ -905,6 +909,50 @@ async function loadParkingLabelIcons(mapInstance) {
   }
 }
 
+async function loadStructurePoints(mapInstance) {
+  if (!STRUCTURE_3D_ENABLED || !window.Structure3D || !mapInstance) return;
+  const controller = typeof AbortController === 'function' ? new AbortController() : null;
+  const timeout = controller ? setTimeout(() => controller.abort(), 8000) : null;
+  try {
+    const url = `${API_BASE}/api/maps/${encodeURIComponent(MAP_ID)}/special-points`;
+    const res = await fetch(url, controller ? { signal: controller.signal } : undefined);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const body = await res.json();
+    const raw = Array.isArray(body) ? body : body && body.data;
+    const points = (Array.isArray(raw) ? raw : [])
+      .filter((point) => point && String(point.mapId || point.map_id || MAP_ID) === String(MAP_ID))
+      .slice(0, STRUCTURE_MAX_POINTS);
+    const count = Structure3D.ensureStructureLayer(mapInstance, maplibregl, points, {
+      onModelError(type, error) {
+        postToMiniProgram({
+          type: 'structure3dError',
+          modelType: type,
+          message: String((error && error.message) || error || 'GLB load failed').slice(0, 160),
+        });
+      },
+    });
+    console.info(`[structure-3d] map=${MAP_ID} points=${count}`);
+    postToMiniProgram({ type: 'structure3dReady', mapId: MAP_ID, count });
+  } catch (error) {
+    console.warn('[structure-3d] 点位加载失败', error);
+    postToMiniProgram({
+      type: 'structure3dError',
+      message: String((error && error.message) || error || 'special-points failed').slice(0, 160),
+    });
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
+function scheduleStructureLoad(mapInstance) {
+  if (!STRUCTURE_3D_ENABLED || !window.Structure3D) return;
+  if (structureLoadTimer) clearTimeout(structureLoadTimer);
+  structureLoadTimer = setTimeout(() => {
+    structureLoadTimer = null;
+    loadStructurePoints(mapInstance);
+  }, STRUCTURE_DEFER_MS);
+}
+
 async function initMap() {
   await window.NavTuning.fetchRemote(API_BASE, MAP_ID);
 
@@ -1000,6 +1048,8 @@ async function initMap() {
       }
       postToMiniProgram({ type: 'h5Ready', routeOk: hasRoute });
       onDisplayFromHash(true);
+      // 不阻塞路线与蓝点首屏；复用 MapLibre 的 WebGL context 延后挂载结构物。
+      scheduleStructureLoad(map);
     } catch (e) {
       if (window.NavDebug) NavDebug.logError('map.on(load)', e);
       showMapLoadError(e);
@@ -1014,6 +1064,14 @@ async function initMap() {
   // 导致 setLayoutProperty 每帧重建 symbol bucket。
   map.on('zoom', scheduleParkingLabelRefresh);
   map.on('zoomend', scheduleParkingLabelRefresh);
+  map.getCanvas().addEventListener('webglcontextlost', () => {
+    console.warn('[structure-3d] WebGL context lost');
+    postToMiniProgram({ type: 'structure3dContextLost', mapId: MAP_ID });
+  });
+  map.getCanvas().addEventListener('webglcontextrestored', () => {
+    console.info('[structure-3d] WebGL context restored');
+    postToMiniProgram({ type: 'structure3dContextRestored', mapId: MAP_ID });
+  });
 
   window.__map = map;
 }

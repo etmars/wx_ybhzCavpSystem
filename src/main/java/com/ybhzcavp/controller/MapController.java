@@ -6,6 +6,7 @@ import com.ybhzcavp.service.MapDataService;
 import com.ybhzcavp.service.MbtilesService;
 import com.ybhzcavp.service.NavSpeedBumpsService;
 import com.ybhzcavp.service.NavTuningProxyService;
+import com.ybhzcavp.service.ParkingService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -24,15 +25,17 @@ public class MapController {
     private final LocateService locateService;
     private final NavTuningProxyService navTuningProxyService;
     private final NavSpeedBumpsService navSpeedBumpsService;
+    private final ParkingService parkingService;
 
     public MapController(MapDataService mapDataService, MbtilesService mbtilesService,
                          LocateService locateService, NavTuningProxyService navTuningProxyService,
-                         NavSpeedBumpsService navSpeedBumpsService) {
+                         NavSpeedBumpsService navSpeedBumpsService, ParkingService parkingService) {
         this.mapDataService = mapDataService;
         this.mbtilesService = mbtilesService;
         this.locateService = locateService;
         this.navTuningProxyService = navTuningProxyService;
         this.navSpeedBumpsService = navSpeedBumpsService;
+        this.parkingService = parkingService;
     }
 
     @GetMapping("/tiles/{z}/{x}/{y}.pbf")
@@ -113,6 +116,17 @@ public class MapController {
     public Map<String, String> labelIndex(@PathVariable String mapId) {
         MapDataService.MapEntry map = mapDataService.resolveMap(mapId);
         return mbtilesService.loadLabelIndex(map);
+    }
+
+    @GetMapping("/api/maps/{mapId}/special-points")
+    public ResponseEntity<ObjectNode> specialPoints(@PathVariable String mapId) {
+        ObjectNode body = parkingService.specialPoints(mapId);
+        if (body.path("ok").asBoolean(false)) {
+            return ResponseEntity.ok(body);
+        }
+        int status = body.path("code").asInt(502);
+        if (status < 400 || status > 599) status = 502;
+        return ResponseEntity.status(status).body(body);
     }
 
     @GetMapping("/api/maps/{mapId}/wall_grid.bin")
