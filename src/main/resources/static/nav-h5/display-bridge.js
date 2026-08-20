@@ -58,7 +58,7 @@
     if (!hash) {
       return {
         display: null, recenter: false, promote: false, promoteBlue: false, reloadRoute: false,
-        promoteActiveLen: 0, jlat: NaN, jlon: NaN,
+        promoteActiveLen: 0, jlat: NaN, jlon: NaN, switchMap: '', activeMap: '',
       };
     }
     const raw = hash.startsWith('#') ? hash.slice(1) : hash;
@@ -66,6 +66,16 @@
     const promote = /(?:^|&)promote=1(?:&|$)/.test(raw);
     const promoteBlue = /(?:^|&)promoteBlue=1(?:&|$)/.test(raw);
     const reloadRoute = /(?:^|&)reloadRoute=1(?:&|$)/.test(raw);
+    let switchMap = '';
+    const smM = raw.match(/(?:^|&)switchMap=([^&]*)(?:&|$)/);
+    if (smM && smM[1]) {
+      try { switchMap = decodeURIComponent(smM[1]); } catch (e) { switchMap = smM[1]; }
+    }
+    let activeMap = '';
+    const amM = raw.match(/(?:^|&)activeMap=([^&]*)(?:&|$)/);
+    if (amM && amM[1]) {
+      try { activeMap = decodeURIComponent(amM[1]); } catch (e) { activeMap = amM[1]; }
+    }
     let promoteActiveLen = 0;
     const alM = raw.match(/(?:^|&)al=(\d+)(?:&|$)/);
     if (alM) promoteActiveLen = parseInt(alM[1], 10) || 0;
@@ -82,6 +92,8 @@
       promote,
       promoteBlue,
       reloadRoute,
+      switchMap,
+      activeMap,
       promoteActiveLen,
       jlat,
       jlon,

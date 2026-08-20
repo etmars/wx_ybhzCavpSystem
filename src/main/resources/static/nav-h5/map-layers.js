@@ -602,14 +602,132 @@ function startTargetSpaceHighlightBreathing(map) {
   targetSpaceBreathFrame = requestAnimationFrame(animate);
 }
 
-function highlightTargetSpace(map, spaceId) {
-  if (!spaceId || !map.getSource('parking-source')) return;
+function parkingSourceId(mapId, primaryMapId) {
+  if (!mapId || String(mapId) === String(primaryMapId || '')) return 'parking-source';
+  return `parking-source-${mapId}`;
+}
+
+function parkingLayerId(baseId, mapId, primaryMapId) {
+  if (!mapId || String(mapId) === String(primaryMapId || '')) return baseId;
+  return `${baseId}__${mapId}`;
+}
+
+function opacityPaintKeys(type) {
+  if (type === 'fill') return ['fill-opacity'];
+  if (type === 'line') return ['line-opacity'];
+  if (type === 'symbol') return ['icon-opacity', 'text-opacity'];
+  if (type === 'fill-extrusion') return ['fill-extrusion-opacity'];
+  if (type === 'circle') return ['circle-opacity'];
+  return [];
+}
+
+const origOpacityByLayerId = {};
+
+function captureLayerOpacities(map, layerId) {
+  if (origOpacityByLayerId[layerId]) return origOpacityByLayerId[layerId];
+  const layer = map.getLayer(layerId);
+  if (!layer) return null;
+  const keys = opacityPaintKeys(layer.type);
+  const out = {};
+  keys.forEach((k) => {
+    let v = 1;
+    try { v = map.getPaintProperty(layerId, k); } catch (e) { v = 1; }
+    out[k] = v != null ? v : 1;
+  });
+  origOpacityByLayerId[layerId] = out;
+  return out;
+}
+
+function applyLayerOpacities(map, layerId, visible) {
+  if (!map.getLayer(layerId)) return;
+  const keys = opacityPaintKeys(map.getLayer(layerId).type);
+  const orig = origOpacityByLayerId[layerId] || captureLayerOpacities(map, layerId) || {};
+  keys.forEach((k) => {
+    try {
+      map.setPaintProperty(layerId, k, visible ? (orig[k] != null ? orig[k] : 1) : 0);
+    } catch (e) { /* ignore */ }
+  });
+}
+
+function parkingLayersForMap(map, mapId, primaryMapId) {
+  const sourceId = parkingSourceId(mapId, primaryMapId);
+  const style = map.getStyle && map.getStyle();
+  const layers = (style && style.layers) || [];
+  return layers.filter((l) => l && l.source === sourceId).map((l) => l.id);
+}
+
+function setParkingMapVisible(map, mapId, visible, primaryMapId) {
+  if (!map || !mapId) return;
+  const ids = parkingLayersForMap(map, mapId, primaryMapId);
+  ids.forEach((id) => {
+    applyLayerOpacities(map, id, visible);
+    try {
+      map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none');
+    } catch (e) { /* ignore */ }
+  });
+  return ids.length;
+}
+
+/**
+ * 为其它 mapId 加矢量源 + 克隆图层。layout 保持 visible、paint opacity=0，
+ * 以便 MapLibre 预拉瓦片；切图时再恢复透明度。
+ */
+function addHiddenParkingMap(map, opts) {
+  const mapId = opts && opts.mapId;
+  const tilesUrl = opts && opts.tilesUrl;
+  const primaryMapId = opts && opts.primaryMapId;
+  if (!map || !mapId || !tilesUrl) return null;
+  if (String(mapId) === String(primaryMapId || '')) return 'parking-source';
+  const sourceId = parkingSourceId(mapId, primaryMapId);
+  if (!map.getSource(sourceId)) {
+    map.addSource(sourceId, {
+      type: 'vector',
+      tiles: [tilesUrl],
+      maxzoom: 20,
+      minzoom: 14,
+      promoteId: 'id',
+    });
+  }
+  const style = map.getStyle && map.getStyle();
+  const layers = (style && style.layers) || [];
+  const primary = layers.filter((l) => l && l.source === 'parking-source');
+  primary.forEach((srcLayer) => {
+    const newId = parkingLayerId(srcLayer.id, mapId, primaryMapId);
+    if (map.getLayer(newId)) return;
+    captureLayerOpacities(map, srcLayer.id);
+    const clone = JSON.parse(JSON.stringify(srcLayer));
+    clone.id = newId;
+    clone.source = sourceId;
+    clone.paint = clone.paint || {};
+    opacityPaintKeys(clone.type).forEach((k) => { clone.paint[k] = 0; });
+    origOpacityByLayerId[newId] = origOpacityByLayerId[srcLayer.id]
+      ? { ...origOpacityByLayerId[srcLayer.id] }
+      : opacityPaintKeys(clone.type).reduce((acc, k) => {
+        acc[k] = (srcLayer.paint && srcLayer.paint[k] != null) ? srcLayer.paint[k] : 1;
+        return acc;
+      }, {});
+    const idx = layers.findIndex((l) => l && l.id === srcLayer.id);
+    const beforeId = (idx >= 0 && idx < layers.length - 1) ? layers[idx + 1].id : null;
+    try {
+      if (beforeId && map.getLayer(beforeId)) map.addLayer(clone, beforeId);
+      else map.addLayer(clone);
+    } catch (e) {
+      try { map.addLayer(clone); } catch (e2) { /* ignore */ }
+    }
+  });
+  return sourceId;
+}
+
+function highlightTargetSpace(map, spaceId, sourceId, aboveLayerId) {
+  const src = sourceId || 'parking-source';
+  const above = aboveLayerId || 'parking-fill';
+  if (!spaceId || !map.getSource(src)) return;
   stopTargetSpaceHighlightBreathing();
   if (map.getLayer(TARGET_SPACE_LAYER_ID)) map.removeLayer(TARGET_SPACE_LAYER_ID);
   addLayerAbove(map, {
     id: TARGET_SPACE_LAYER_ID,
     type: 'fill',
-    source: 'parking-source',
+    source: src,
     'source-layer': 'parking_fill',
     filter: ['all', ['==', ['get', 'name'], spaceId]],
     paint: {
@@ -617,7 +735,7 @@ function highlightTargetSpace(map, spaceId) {
       'fill-opacity': TARGET_SPACE_OPACITY_MIN,
       'fill-antialias': true,
     },
-  }, 'parking-fill');
+  }, map.getLayer(above) ? above : 'parking-fill');
   startTargetSpaceHighlightBreathing(map);
 }
 
@@ -752,6 +870,11 @@ function updateRouteProgress(map, routePoints, progressPct) {
 window.MapLayers = {
   addExtraStyleLayers,
   addLayerAbove,
+  parkingSourceId,
+  parkingLayerId,
+  parkingLayersForMap,
+  addHiddenParkingMap,
+  setParkingMapVisible,
   restackPoiLayers,
   ensureUserPuckLayers,
   ensureUserPuckOnTop,

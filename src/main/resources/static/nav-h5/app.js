@@ -15,13 +15,32 @@ const TILES_BASE = Q.tiles_base || 'https://parkinglot.c-avp.com:9065/tiles';
 const MAP_ID = Q.map_id || 'gqyq';
 const TILES_USE_MAP_ID = Q.tiles_use_map_id !== '0';
 const TILES_V = (Q.tiles_v || '').trim();
-const TILES_URL = (() => {
-  const base = TILES_USE_MAP_ID
-    ? `${TILES_BASE}/{z}/{x}/{y}.pbf?map_id=${encodeURIComponent(MAP_ID)}`
-    : `${TILES_BASE}/{z}/{x}/{y}.pbf`;
-  if (!TILES_V) return base;
-  return `${base}${base.includes('?') ? '&' : '?'}v=${encodeURIComponent(TILES_V)}`;
+const MAP_IDS = (() => {
+  const raw = String(Q.map_ids || '').split(',').map((s) => s.trim()).filter(Boolean);
+  const ids = [];
+  const seen = new Set();
+  [MAP_ID].concat(raw).forEach((id) => {
+    if (id && !seen.has(id)) {
+      seen.add(id);
+      ids.push(id);
+    }
+  });
+  return ids;
 })();
+const MAP_IDS_QUERY = String(Q.map_ids || '').split(',').map((s) => s.trim()).filter(Boolean);
+const TILES_VS = String(Q.tiles_vs || '').split(',').map((s) => s.trim());
+function tilesUrlForMap(mapId) {
+  const base = TILES_USE_MAP_ID
+    ? `${TILES_BASE}/{z}/{x}/{y}.pbf?map_id=${encodeURIComponent(mapId)}`
+    : `${TILES_BASE}/{z}/{x}/{y}.pbf`;
+  let v = '';
+  const idx = MAP_IDS_QUERY.indexOf(mapId);
+  if (idx >= 0 && TILES_VS[idx]) v = TILES_VS[idx];
+  if (!v && String(mapId) === String(MAP_ID)) v = TILES_V;
+  if (!v) return base;
+  return `${base}${base.includes('?') ? '&' : '?'}v=${encodeURIComponent(v)}`;
+}
+const TILES_URL = tilesUrlForMap(MAP_ID);
 const MAP_BEARING = parseFloat(Q.map_bearing) || 0;
 const GEO_API = Q.geo_api || `https://parkinglot.c-avp.com:9065/api/maps/${MAP_ID}/geometry`;
 const ROUTE_API = Q.route_api || 'https://parkinglot.c-avp.com:9065/api/nav/route';
@@ -45,6 +64,9 @@ const WAYPOINT = (Q.waypoint_lon && Q.waypoint_lat)
   : null;
 let ACTIVE_LEN = parseInt(Q.active_len || '0', 10) || 0;
 const DEST_IS_FINAL = Q.dest_is_final === '1';
+/** 该停车场 OSM 地图数量；>1 才渲染 sType=1005 交界层。缺省/0 保持显示（兼容旧链接）。 */
+const LOT_MAP_COUNT = parseInt(Q.lot_map_count || '0', 10) || 0;
+const PARKING_LOT_ID = (Q.parking_lot_id || '').trim();
 
 let routePoints = [];
 let previewPoints = [];
@@ -56,6 +78,7 @@ let promoteGuardUntilMs = 0;
 let destination = null;
 let map = null;
 let mapCenter = null;
+let activeMapId = MAP_ID;
 let navigating = false;
 let lastDisplay = null;
 let lastCameraTarget = null;
@@ -260,9 +283,10 @@ function applyAheadAsNavRoute(aheadAll, nextActiveLen, junction) {
     }
   }
 
-  const br = routePoints.length >= 2
+  const brMap = routePoints.length >= 2
     ? window.NavGeo.bearingDegrees(routePoints[0], routePoints[1])
     : 0;
+  const brTn = ((brMap + MAP_BEARING) % 360 + 360) % 360;
   let anchor = routePoints[0];
   if (junction && Number.isFinite(junction.latitude) && Number.isFinite(junction.longitude)) {
     anchor = { latitude: junction.latitude, longitude: junction.longitude };
@@ -274,17 +298,17 @@ function applyAheadAsNavRoute(aheadAll, nextActiveLen, junction) {
   cancelPoseTween();
   if (renderPose && Number.isFinite(distPrev) && distPrev <= 40) {
     renderPose.prog = 0;
-    renderPose.hdg = br;
+    renderPose.hdg = brTn;
   } else if (renderPose) {
     renderPose.lon = anchor.longitude;
     renderPose.lat = anchor.latitude;
-    renderPose.hdg = br;
+    renderPose.hdg = brTn;
     renderPose.prog = 0;
   } else if (anchor) {
     renderPose = {
       lon: anchor.longitude,
       lat: anchor.latitude,
-      hdg: br,
+      hdg: brTn,
       cam: previewCameraBearing(),
       prog: 0,
     };
@@ -566,13 +590,13 @@ function updateNavCamera(loc, cameraBearing, force, navParked, smooth) {
 
 /**
  * 预览相机方位：route-up，让起点前方路径竖直向上。
- * MapLibre 的 bearing 就是「哪个方位朝屏幕上方」，且与路线点同处一个渲染坐标系，
- * 因此直接用路线前向方位，不能再叠加 MAP_BEARING（那会把路径转回图北朝上）。
+ * MapLibre 的 bearing 与路线点同处图纸 CRS（+lat=图北），直接用路线前向角。
+ * map_bearing（如 ziguang=327°）是罗盘真北偏移，叠进去会把路径拧斜。
  */
 function previewCameraBearing() {
-  if (routePoints.length < 2) return MAP_BEARING;
+  if (routePoints.length < 2) return 0;
   const br = window.NavGeo.routeForwardBearingAtProgress(routePoints, 0, routeMetrics);
-  return Number.isFinite(br) ? br : MAP_BEARING;
+  return Number.isFinite(br) ? br : 0;
 }
 
 /**
@@ -622,31 +646,32 @@ function seedPuckAtRouteStart() {
   }
   camDiag('seedPuck APPLY', 'renderPose→0');
   const start = routePoints[0];
-  const br = routePoints.length >= 2
+  const brMap = routePoints.length >= 2
     ? window.NavGeo.bearingDegrees(routePoints[0], routePoints[1])
     : 0;
-  MapLayers.ensureUserPuckLayers(map, [start.longitude, start.latitude], headingForMapIcon(br));
+  const brTn = ((brMap + MAP_BEARING) % 360 + 360) % 360;
+  MapLayers.ensureUserPuckLayers(map, [start.longitude, start.latitude], headingForMapIcon(brTn));
   cancelPoseTween();
   renderPose = {
     lon: start.longitude,
     lat: start.latitude,
-    hdg: br,
+    hdg: brTn,
     cam: previewCameraBearing(),
     prog: 0,
   };
   if (!lastDisplay || !lastDisplay.location) {
     lastDisplay = {
       location: { longitude: start.longitude, latitude: start.latitude },
-      heading: br,
+      heading: brTn,
       progressMeters: 0,
       navigating: false,
     };
   }
 }
 
-/** 对齐 Android：ICON_ROTATION_ALIGNMENT_MAP 直接吃真北方位，不做 viewport 换算 */
+/** display.heading 为真北；icon-rotate(ALIGNMENT_MAP) 相对图纸北，须减 map_bearing */
 function headingForMapIcon(trueNorthHeading) {
-  return ((trueNorthHeading || 0) % 360 + 360) % 360;
+  return (((trueNorthHeading || 0) - MAP_BEARING) % 360 + 360) % 360;
 }
 
 function updateUserPuck(loc, bearing) {
@@ -828,6 +853,13 @@ function recenterCamera(preferDisplay) {
   }
 }
 
+function resolveHashMapId(meta) {
+  if (!meta) return '';
+  const sm = String(meta.switchMap || '').trim();
+  if (sm) return sm;
+  return String(meta.activeMap || '').trim();
+}
+
 function onDisplayFromHash(forceCamera) {
   if (!window.DisplayBridge) return;
   const rawHash = window.location.hash || '';
@@ -836,27 +868,35 @@ function onDisplayFromHash(forceCamera) {
     ? { latitude: meta.jlat, longitude: meta.jlon }
     : null;
 
-  if (meta.promoteBlue || meta.promote || meta.reloadRoute || forceCamera) {
+  const wantMap = resolveHashMapId(meta);
+
+  if (meta.promoteBlue || meta.promote || meta.reloadRoute || meta.switchMap || meta.activeMap || forceCamera) {
     camDiag('hashRecv',
       `force=${!!forceCamera} promoteBlue=${!!meta.promoteBlue} promote=${!!meta.promote}`
-      + ` reload=${!!meta.reloadRoute} al=${meta.promoteActiveLen || 0}`
+      + ` reload=${!!meta.reloadRoute} switchMap=${meta.switchMap || '-'} activeMap=${meta.activeMap || '-'}`
+      + ` al=${meta.promoteActiveLen || 0}`
       + ` junc=${fmtLL(junc)} hasDisp=${!!meta.display}`
       + ` prog=${meta.display ? Number(meta.display.progressMeters || 0).toFixed(1) : '-'}`
       + ` hashHead=${rawHash.slice(0, 120)}`);
+  }
+
+  if (wantMap && String(wantMap) !== String(activeMapId)) {
+    switchVisibleMap(wantMap);
   }
 
   const runPromote = async () => {
     camDiag('hashPromoteBlue',
       `al=${meta.promoteActiveLen || '-'} grayWas=${previewPoints.length}`
       + ` allPts=${allRoutePoints.length} blueWas=${routeEnds(routePoints)}`
-      + ` grayWasEnds=${routeEnds(previewPoints)}`);
-    let ok = promotePreviewToBlue(meta.promoteActiveLen, junc);
-    // 仅在站内切线失败时才 reload；成功后再 reload 容易把刚画上的蓝线冲掉
-    if (!ok) {
+      + ` grayWasEnds=${routeEnds(previewPoints)} switch=${meta.switchMap || '-'}`);
+    let ok = false;
+    if (meta.switchMap) {
       ok = await reloadRouteInPlace(meta.promoteActiveLen, junc);
+    } else {
+      ok = promotePreviewToBlue(meta.promoteActiveLen, junc);
+      if (!ok) ok = await reloadRouteInPlace(meta.promoteActiveLen, junc);
     }
     if (ok && map && routePoints.length >= 2) {
-      // 换线后先钉在 prog=0，再吃 display，避免脏 prog 把蓝线切没
       MapLayers.updateRouteProgressByMeters(map, routePoints, 0, routeMetrics);
     }
     camDiag('hashPromoteBlue done',
@@ -881,7 +921,7 @@ function onDisplayFromHash(forceCamera) {
     applyDisplayState(display, force);
   };
 
-  if (meta.promoteBlue || meta.promote || meta.reloadRoute) {
+  if (meta.promoteBlue || meta.promote || meta.reloadRoute || meta.switchMap) {
     // 必须先换线再贴位姿，否则 prog=0 会把「已走旧段」整段涂回蓝色
     Promise.resolve(runPromote()).then((ok) => {
       if (!ok) {
@@ -897,30 +937,32 @@ function onDisplayFromHash(forceCamera) {
   applyDisplay();
 }
 
-async function loadParkingLabelIcons(mapInstance) {
+async function loadParkingLabelIcons(mapInstance, mapId) {
+  const mid = mapId || MAP_ID;
   try {
-    const url = `${API_BASE}/api/maps/${encodeURIComponent(MAP_ID)}/label-index`;
+    const url = `${API_BASE}/api/maps/${encodeURIComponent(mid)}/label-index`;
     const res = await fetch(url);
     if (!res.ok) return;
     const labelMap = await res.json();
     MapLayersUtil.registerParkingLabelIcons(mapInstance, labelMap);
   } catch (e) {
-    console.warn('loadParkingLabelIcons failed', e);
+    console.warn('loadParkingLabelIcons failed', mid, e);
   }
 }
 
-async function loadStructurePoints(mapInstance) {
+async function loadStructurePoints(mapInstance, mapId) {
   if (!STRUCTURE_3D_ENABLED || !window.Structure3D || !mapInstance) return;
+  const mid = mapId || activeMapId || MAP_ID;
   const controller = typeof AbortController === 'function' ? new AbortController() : null;
   const timeout = controller ? setTimeout(() => controller.abort(), 8000) : null;
   try {
-    const url = `${API_BASE}/api/maps/${encodeURIComponent(MAP_ID)}/special-points`;
+    const url = `${API_BASE}/api/maps/${encodeURIComponent(mid)}/special-points`;
     const res = await fetch(url, controller ? { signal: controller.signal } : undefined);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const body = await res.json();
     const raw = Array.isArray(body) ? body : body && body.data;
     const points = (Array.isArray(raw) ? raw : [])
-      .filter((point) => point && String(point.mapId || point.map_id || MAP_ID) === String(MAP_ID))
+      .filter((point) => point && String(point.mapId || point.map_id || mid) === String(mid))
       .slice(0, STRUCTURE_MAX_POINTS);
     const count = Structure3D.ensureStructureLayer(mapInstance, maplibregl, points, {
       onModelError(type, error) {
@@ -931,8 +973,8 @@ async function loadStructurePoints(mapInstance) {
         });
       },
     });
-    console.info(`[structure-3d] map=${MAP_ID} points=${count}`);
-    postToMiniProgram({ type: 'structure3dReady', mapId: MAP_ID, count });
+    console.info(`[structure-3d] map=${mid} points=${count}`);
+    postToMiniProgram({ type: 'structure3dReady', mapId: mid, count });
   } catch (error) {
     console.warn('[structure-3d] 点位加载失败', error);
     postToMiniProgram({
@@ -949,8 +991,126 @@ function scheduleStructureLoad(mapInstance) {
   if (structureLoadTimer) clearTimeout(structureLoadTimer);
   structureLoadTimer = setTimeout(() => {
     structureLoadTimer = null;
-    loadStructurePoints(mapInstance);
+    loadStructurePoints(mapInstance, activeMapId);
   }, STRUCTURE_DEFER_MS);
+}
+
+function ensureExtraParkingMaps() {
+  if (!map || !window.MapLayers || !MapLayers.addHiddenParkingMap) return;
+  const extras = MAP_IDS.filter((id) => id && String(id) !== String(MAP_ID));
+  console.info(`[CamDiag] ensureExtraParkingMaps primary=${MAP_ID} extras=${extras.join(',') || '-'}`);
+  extras.forEach((id) => {
+    const src = MapLayers.addHiddenParkingMap(map, {
+      mapId: id,
+      tilesUrl: tilesUrlForMap(id),
+      primaryMapId: MAP_ID,
+    });
+    const n = MapLayers.parkingLayersForMap
+      ? MapLayers.parkingLayersForMap(map, id, MAP_ID).length
+      : -1;
+    console.info(`[CamDiag] preloaded map=${id} source=${src || '-'} layers=${n}`);
+    loadParkingLabelIcons(map, id);
+  });
+  if (typeof MapLayers.ensureUserPuckOnTop === 'function') {
+    MapLayers.ensureUserPuckOnTop(map);
+  }
+}
+
+function switchVisibleMap(nextMapId) {
+  const want = String(nextMapId || '').trim();
+  if (!want || !map || want === String(activeMapId)) return;
+  const prev = activeMapId;
+  // 切到未预挂载的图：现场补源（兼容旧链接无 map_ids）
+  if (String(want) !== String(MAP_ID)
+    && window.MapLayers
+    && MapLayers.parkingSourceId
+    && !map.getSource(MapLayers.parkingSourceId(want, MAP_ID))) {
+    if (MapLayers.addHiddenParkingMap) {
+      MapLayers.addHiddenParkingMap(map, {
+        mapId: want,
+        tilesUrl: tilesUrlForMap(want),
+        primaryMapId: MAP_ID,
+      });
+      loadParkingLabelIcons(map, want);
+      camDiag('switchMap addSource', want);
+    }
+  }
+  let nHide = 0;
+  let nShow = 0;
+  if (MapLayers.setParkingMapVisible) {
+    nHide = MapLayers.setParkingMapVisible(map, prev, false, MAP_ID) || 0;
+    nShow = MapLayers.setParkingMapVisible(map, want, true, MAP_ID) || 0;
+  }
+  // 兜底：克隆层未就绪时再补挂一次 hidden source
+  if (nShow === 0 && String(want) !== String(MAP_ID) && MapLayers.addHiddenParkingMap) {
+    MapLayers.addHiddenParkingMap(map, {
+      mapId: want,
+      tilesUrl: tilesUrlForMap(want),
+      primaryMapId: MAP_ID,
+    });
+    loadParkingLabelIcons(map, want);
+    nHide = MapLayers.setParkingMapVisible(map, prev, false, MAP_ID) || nHide;
+    nShow = MapLayers.setParkingMapVisible(map, want, true, MAP_ID) || 0;
+    if (nShow === 0) {
+      console.warn(`[switchMap] showLayers still 0 map=${want} prev=${prev}`);
+    }
+  }
+  activeMapId = want;
+  try { sessionStorage.setItem(`navActiveMap:${SESSION_ID}`, want); } catch (e) { /* ignore */ }
+  if (NAV_FLOW === 'PARKING_ENTRY' && SPACE_ID && MapLayers.highlightTargetSpace) {
+    const src = MapLayers.parkingSourceId(want, MAP_ID);
+    const above = MapLayers.parkingLayerId('parking-fill', want, MAP_ID);
+    MapLayers.highlightTargetSpace(map, SPACE_ID, src, above);
+  }
+  if (typeof MapLayers.ensureUserPuckOnTop === 'function') {
+    MapLayers.ensureUserPuckOnTop(map);
+  }
+  if (window.Structure3D && Structure3D.removeStructureLayer) {
+    try { Structure3D.removeStructureLayer(map); } catch (e) { /* ignore */ }
+  }
+  loadStructurePoints(map, want);
+  camDiag('switchMap', `${prev} → ${want} hideLayers=${nHide} showLayers=${nShow}`);
+}
+
+const JUNCTION_1005_LAYER_IDS = [
+  'junction-1005-fill',
+  'junction-1005-edge',
+  'junction-label',
+];
+
+function setJunction1005Visible(mapInstance, visible) {
+  if (!mapInstance || !mapInstance.getStyle) return;
+  const vis = visible ? 'visible' : 'none';
+  const layers = (mapInstance.getStyle().layers || []);
+  layers.forEach((layer) => {
+    if (!layer || !layer.id) return;
+    const hit = JUNCTION_1005_LAYER_IDS.some((id) => (
+      layer.id === id || layer.id.indexOf(`${id}__`) === 0
+    ));
+    if (hit && mapInstance.getLayer(layer.id)) {
+      mapInstance.setLayoutProperty(layer.id, 'visibility', vis);
+    }
+  });
+}
+
+/** 单图场站不渲染 sType=1005（楼层交界面/边/标注）；多图才显示。 */
+async function applyJunction1005Visibility(mapInstance) {
+  let count = LOT_MAP_COUNT;
+  if (!count && PARKING_LOT_ID) {
+    try {
+      const url = `${API_BASE}/api/maps?parking_lot_id=${encodeURIComponent(PARKING_LOT_ID)}`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const body = await res.json();
+        const arr = Array.isArray(body) ? body : (body && body.data);
+        count = Array.isArray(arr) ? arr.length : 0;
+      }
+    } catch (e) {
+      console.warn('lot map count fetch failed', e);
+    }
+  }
+  if (!count) return;
+  setJunction1005Visible(mapInstance, count > 1);
 }
 
 async function initMap() {
@@ -971,6 +1131,15 @@ async function initMap() {
   const style = await styleRes.json();
   style.sources['parking-source'].tiles = [TILES_URL];
   MapLayers.addExtraStyleLayers(style);
+  // 已知单图时在创建 Map 前关掉 1005，避免首帧闪一下交界面
+  if (LOT_MAP_COUNT === 1 && Array.isArray(style.layers)) {
+    JUNCTION_1005_LAYER_IDS.forEach((id) => {
+      const layer = style.layers.find((l) => l && l.id === id);
+      if (layer) {
+        layer.layout = Object.assign({}, layer.layout || {}, { visibility: 'none' });
+      }
+    });
+  }
 
   map = new maplibregl.Map({
     container: 'map',
@@ -980,7 +1149,8 @@ async function initMap() {
     maxZoom: 21,
     minZoom: 16,
     pitch: T.NAV_PITCH,
-    bearing: MAP_BEARING,
+    // 图纸 CRS：bearing 0 = 图北朝上。MAP_BEARING 是罗盘偏移，不能当初始相机角。
+    bearing: 0,
     antialias: true,
     attributionControl: false,
   });
@@ -991,7 +1161,9 @@ async function initMap() {
       MapLayersUtil.registerNavArrowIcon(map);
       MapLayersUtil.registerUserHeadingIcon(map);
       MapLayers.restackPoiLayers(map);
+      ensureExtraParkingMaps();
       await loadParkingLabelIcons(map);
+      await applyJunction1005Visibility(map);
       MapLayers.updateParkingLabelSizeByZoom(map);
 
       const hasRoute = await resolveRoute();
@@ -1042,7 +1214,7 @@ async function initMap() {
           center: mapCenter,
           zoom: T.NAV_ZOOM,
           pitch: T.NAV_PITCH,
-          bearing: MAP_BEARING,
+          bearing: 0,
           duration: 0,
         }, CAMERA_EVENT_DATA);
       }
