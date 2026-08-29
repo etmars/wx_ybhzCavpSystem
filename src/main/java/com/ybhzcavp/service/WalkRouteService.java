@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.ybhzcavp.config.AppProperties;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.net.URI;
@@ -31,6 +32,7 @@ public class WalkRouteService {
     private final AppProperties props;
     private final HttpClient httpClient;
 
+    @Autowired
     public WalkRouteService(MapDataService mapDataService, AppProperties props) {
         this(mapDataService, props, HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(5))
