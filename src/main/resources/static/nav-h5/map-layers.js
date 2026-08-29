@@ -360,8 +360,11 @@ function ensureUserPuckLayers(map, seedLngLat, seedBearing) {
   ensureUserPuckOnTop(map);
 }
 
-function ensureNavRouteLayers(map, routePoints) {
+function ensureNavRouteLayers(map, routePoints, options) {
   if (!routePoints || routePoints.length < 2) return;
+  const walk = !!(options && options.walk);
+  const casingWidth = walk ? 8 : 14;
+  const routeWidth = walk ? 6 : 10;
   const fullCoords = routePoints.map((p) => [p.longitude, p.latitude]);
   const fullLine = lineFeature(fullCoords);
   const endPoint = {
@@ -383,21 +386,21 @@ function ensureNavRouteLayers(map, routePoints) {
       type: 'line',
       source: 'nav-route-source',
       layout: ROUTE_LINE_LAYOUT,
-      paint: { 'line-color': '#F7FBFF', 'line-width': 14, 'line-opacity': 0.98 },
+      paint: { 'line-color': '#F7FBFF', 'line-width': casingWidth, 'line-opacity': 0.98 },
     }, routeBase);
     addLayerAbove(map, {
       id: 'nav-route-traveled',
       type: 'line',
       source: 'nav-route-traveled-source',
       layout: ROUTE_TRAVELED_LAYOUT,
-      paint: { 'line-color': 'rgba(62, 80, 96, 0.6)', 'line-width': 10, 'line-opacity': 1 },
+      paint: { 'line-color': 'rgba(62, 80, 96, 0.6)', 'line-width': routeWidth, 'line-opacity': 1 },
     }, 'nav-route-casing');
     addLayerAbove(map, {
       id: 'nav-route-line',
       type: 'line',
       source: 'nav-route-remaining-source',
       layout: ROUTE_REMAINING_LAYOUT,
-      paint: { 'line-color': '#3E86EC', 'line-width': 10, 'line-opacity': 1 },
+      paint: { 'line-color': '#3E86EC', 'line-width': routeWidth, 'line-opacity': 1 },
     }, 'nav-route-traveled');
     addLayerAbove(map, {
       id: 'nav-route-end-layer',

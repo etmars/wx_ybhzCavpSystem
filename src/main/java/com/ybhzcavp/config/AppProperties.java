@@ -15,6 +15,7 @@ public class AppProperties {
     private Calib calib = new Calib();
     private Navigation navigation = new Navigation();
     private Planner planner = new Planner();
+    private WalkPlanner walkPlanner = new WalkPlanner();
     private Mqtt mqtt = new Mqtt();
     private Config config = new Config();
 
@@ -80,6 +81,14 @@ public class AppProperties {
 
     public void setPlanner(Planner planner) {
         this.planner = planner;
+    }
+
+    public WalkPlanner getWalkPlanner() {
+        return walkPlanner;
+    }
+
+    public void setWalkPlanner(WalkPlanner walkPlanner) {
+        this.walkPlanner = walkPlanner;
     }
 
     public Mqtt getMqtt() {
@@ -238,8 +247,22 @@ public class AppProperties {
         }
     }
 
+    /** 车行调度 planner（ros2http，/plan 接收 lotId/vehicleId/spaceId） */
     public static class Planner {
         private String baseUrl = "http://127.0.0.1:18080";
+
+        public String getBaseUrl() {
+            return baseUrl;
+        }
+
+        public void setBaseUrl(String baseUrl) {
+            this.baseUrl = baseUrl;
+        }
+    }
+
+    /** 步行 planner（AvpPlanning，/plan 接收 osm_map_name/entrance/target，与车行契约不同） */
+    public static class WalkPlanner {
+        private String baseUrl = "http://127.0.0.1:18090";
 
         public String getBaseUrl() {
             return baseUrl;

@@ -67,6 +67,7 @@ const DEST_IS_FINAL = Q.dest_is_final === '1';
 /** 该停车场 OSM 地图数量；>1 才渲染 sType=1005 交界层。缺省/0 保持显示（兼容旧链接）。 */
 const LOT_MAP_COUNT = parseInt(Q.lot_map_count || '0', 10) || 0;
 const PARKING_LOT_ID = (Q.parking_lot_id || '').trim();
+const IS_WALK_FLOW = NAV_FLOW === 'FIND_CAR_WALK';
 
 let routePoints = [];
 let previewPoints = [];
@@ -271,7 +272,7 @@ function applyAheadAsNavRoute(aheadAll, nextActiveLen, junction) {
   destination = routePoints[routePoints.length - 1];
 
   if (map) {
-    MapLayers.ensureNavRouteLayers(map, routePoints);
+    MapLayers.ensureNavRouteLayers(map, routePoints, { walk: IS_WALK_FLOW });
     MapLayers.updateDirectionArrows(map, routePoints);
     if (typeof MapLayers.updateRouteProgressByMeters === 'function') {
       MapLayers.updateRouteProgressByMeters(map, routePoints, 0, routeMetrics);
@@ -376,7 +377,7 @@ function promotePreviewToBlue(nextActiveLen, junction) {
       camDiag('promoteBlue ALREADY',
         `blue0 near junc ${d0.toFixed(1)}m ${routeEnds(routePoints)}`);
       if (map) {
-        MapLayers.ensureNavRouteLayers(map, routePoints);
+        MapLayers.ensureNavRouteLayers(map, routePoints, { walk: IS_WALK_FLOW });
         if (typeof MapLayers.updateRouteProgressByMeters === 'function') {
           MapLayers.updateRouteProgressByMeters(map, routePoints, 0, routeMetrics);
         }
@@ -530,6 +531,43 @@ function applyNavCameraPadding() {
   map.setPadding(navCameraPadding(), CAMERA_EVENT_DATA);
 }
 
+function navCameraZoom() {
+  return IS_WALK_FLOW ? (T.WALK_ZOOM || T.PREVIEW_ZOOM || 20.5) : T.NAV_ZOOM;
+}
+
+function navCameraPitch() {
+  return IS_WALK_FLOW ? (T.WALK_PITCH || T.PREVIEW_PITCH || 20) : T.NAV_PITCH;
+}
+
+function applyWalkProfile(mapInstance) {
+  if (!IS_WALK_FLOW || !mapInstance || !mapInstance.getStyle) return;
+  const hiddenPrefixes = [
+    'lane-bound-line',
+    'arrow-1001-fill',
+    'nav-direction-arrows-layer',
+    'user-loc-heading-layer',
+  ];
+  const layers = (mapInstance.getStyle().layers || []);
+  layers.forEach((layer) => {
+    if (!layer || !layer.id || !mapInstance.getLayer(layer.id)) return;
+    if (hiddenPrefixes.some((id) => layer.id === id || layer.id.indexOf(`${id}__`) === 0)) {
+      mapInstance.setLayoutProperty(layer.id, 'visibility', 'none');
+    }
+    if (layer.id === 'road-2005-fill' || layer.id.indexOf('road-2005-fill__') === 0) {
+      mapInstance.setPaintProperty(layer.id, 'fill-opacity', 0.35);
+    }
+  });
+  if (mapInstance.getLayer('nav-route-casing')) {
+    mapInstance.setPaintProperty('nav-route-casing', 'line-width', 8);
+  }
+  if (mapInstance.getLayer('nav-route-traveled')) {
+    mapInstance.setPaintProperty('nav-route-traveled', 'line-width', 6);
+  }
+  if (mapInstance.getLayer('nav-route-line')) {
+    mapInstance.setPaintProperty('nav-route-line', 'line-width', 6);
+  }
+}
+
 function updateNavCamera(loc, cameraBearing, force, navParked, smooth) {
   if (!map || !loc || !navigating) return;
   if (navParked && !force) return;
@@ -571,8 +609,8 @@ function updateNavCamera(loc, cameraBearing, force, navParked, smooth) {
   lastCameraBearing = br;
   const camera = {
     center: target,
-    zoom: T.NAV_ZOOM,
-    pitch: T.NAV_PITCH,
+    zoom: navCameraZoom(),
+    pitch: navCameraPitch(),
     bearing: br,
     padding: navCameraPadding(),
   };
@@ -607,8 +645,8 @@ function routeStartCameraOptions() {
   const start = routePoints[0];
   return {
     center: [start.longitude, start.latitude],
-    zoom: T.NAV_ZOOM,
-    pitch: T.NAV_PITCH,
+    zoom: navCameraZoom(),
+    pitch: navCameraPitch(),
     bearing: previewCameraBearing(),
     padding: navCameraPadding(),
   };
@@ -1057,7 +1095,8 @@ function switchVisibleMap(nextMapId) {
   }
   activeMapId = want;
   try { sessionStorage.setItem(`navActiveMap:${SESSION_ID}`, want); } catch (e) { /* ignore */ }
-  if (NAV_FLOW === 'PARKING_ENTRY' && SPACE_ID && MapLayers.highlightTargetSpace) {
+  if ((NAV_FLOW === 'PARKING_ENTRY' || IS_WALK_FLOW)
+      && SPACE_ID && MapLayers.highlightTargetSpace) {
     const src = MapLayers.parkingSourceId(want, MAP_ID);
     const above = MapLayers.parkingLayerId('parking-fill', want, MAP_ID);
     MapLayers.highlightTargetSpace(map, SPACE_ID, src, above);
@@ -1069,6 +1108,7 @@ function switchVisibleMap(nextMapId) {
     try { Structure3D.removeStructureLayer(map); } catch (e) { /* ignore */ }
   }
   loadStructurePoints(map, want);
+  applyWalkProfile(map);
   camDiag('switchMap', `${prev} → ${want} hideLayers=${nHide} showLayers=${nShow}`);
 }
 
@@ -1145,10 +1185,10 @@ async function initMap() {
     container: 'map',
     style,
     center,
-    zoom: T.NAV_ZOOM,
+    zoom: navCameraZoom(),
     maxZoom: 21,
     minZoom: 16,
-    pitch: T.NAV_PITCH,
+    pitch: navCameraPitch(),
     // 图纸 CRS：bearing 0 = 图北朝上。MAP_BEARING 是罗盘偏移，不能当初始相机角。
     bearing: 0,
     antialias: true,
@@ -1169,12 +1209,12 @@ async function initMap() {
       const hasRoute = await resolveRoute();
 
       if (hasRoute) {
-        MapLayers.ensureNavRouteLayers(map, routePoints);
+        MapLayers.ensureNavRouteLayers(map, routePoints, { walk: IS_WALK_FLOW });
         MapLayers.updateDirectionArrows(map, routePoints);
         if (previewPoints.length >= 2 && typeof MapLayers.ensureRoutePreviewLayer === 'function') {
           MapLayers.ensureRoutePreviewLayer(map, previewPoints);
         }
-        if (NAV_FLOW === 'PARKING_ENTRY' && SPACE_ID) {
+        if ((NAV_FLOW === 'PARKING_ENTRY' || IS_WALK_FLOW) && SPACE_ID) {
           MapLayers.highlightTargetSpace(map, SPACE_ID);
         }
         // 途径点橙色数字牌；终点 P 牌仅当预览段确实终止于目标车位
@@ -1185,6 +1225,7 @@ async function initMap() {
           MapLayers.ensureDestPinLayer(map, destination, SPACE_ID);
         }
         seedPuckAtRouteStart();
+        applyWalkProfile(map);
         map.resize();
         applyNavCameraPadding();
         focusPreviewCamera();
@@ -1212,8 +1253,8 @@ async function initMap() {
       } else {
         map.flyTo({
           center: mapCenter,
-          zoom: T.NAV_ZOOM,
-          pitch: T.NAV_PITCH,
+          zoom: navCameraZoom(),
+          pitch: navCameraPitch(),
           bearing: 0,
           duration: 0,
         }, CAMERA_EVENT_DATA);

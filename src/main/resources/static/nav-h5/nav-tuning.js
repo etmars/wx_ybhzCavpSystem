@@ -4,6 +4,8 @@ window.NavTuning = {
   PREVIEW_ZOOM: 21,
   NAV_PITCH: 42,
   PREVIEW_PITCH: 20,
+  WALK_ZOOM: 20.5,
+  WALK_PITCH: 20,
   NAV_CAMERA_EASE_MS: 600,
   NAV_PADDING_BOTTOM: 180,
   /** 蓝点固定落在屏幕纵向该比例处：0.5 居中，0.68 约在下方 1/3 区域 */

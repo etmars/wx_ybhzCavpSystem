@@ -35,6 +35,8 @@ app:
     walk-speed-mps: 1.15
   planner:
     base-url: ${PLANNER_BASE_URL:http://127.0.0.1:18080}
+  walk-planner:
+    base-url: ${WALK_PLANNER_BASE_URL:http://127.0.0.1:18090}
   mqtt:
     broker-url: ${MQTT_BROKER_URL:tcp://127.0.0.1:1883}
     enabled: ${MQTT_ENABLED:false}
