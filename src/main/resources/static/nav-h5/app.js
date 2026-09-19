@@ -1153,22 +1153,29 @@ async function applyJunction1005Visibility(mapInstance) {
   setJunction1005Visible(mapInstance, count > 1);
 }
 
+function signalVisualReady() {
+  try {
+    if (/(?:^|[?&#])h5vis=1(?:&|$)/.test(location.hash || '')) return;
+    const rest = (location.hash || '').replace(/^#/, '');
+    location.replace(rest ? `#${rest}&h5vis=1` : '#h5vis=1');
+  } catch (e) { /* ignore */ }
+}
+
 async function initMap() {
-  await window.NavTuning.fetchRemote(API_BASE, MAP_ID);
+  const routePromise = resolveRoute();
+  const tuningPromise = window.NavTuning.fetchRemote(API_BASE, MAP_ID).catch(() => {});
+  const geoPromise = fetch(GEO_API).then((res) => res.json()).catch((e) => {
+    console.warn('geo api failed', e);
+    return null;
+  });
+  const stylePromise = fetch('./map-style.json?v=hdroad5').then((res) => res.json());
+  const [style, geo] = await Promise.all([stylePromise, geoPromise, tuningPromise]);
 
   let center = [116.4914516, 39.7300906];
-  try {
-    const res = await fetch(GEO_API);
-    const geo = await res.json();
-    if (geo.centerLon != null && geo.centerLat != null) center = [geo.centerLon, geo.centerLat];
-  } catch (e) {
-    console.warn('geo api failed', e);
+  if (geo && geo.centerLon != null && geo.centerLat != null) {
+    center = [geo.centerLon, geo.centerLat];
   }
   mapCenter = center;
-
-  // 带版本参数，避免微信 web-view / CDN 一直吃到旧 map-style（无路面标线）
-  const styleRes = await fetch(`./map-style.json?v=hdroad5`);
-  const style = await styleRes.json();
   style.sources['parking-source'].tiles = [TILES_URL];
   MapLayers.addExtraStyleLayers(style);
   // 已知单图时在创建 Map 前关掉 1005，避免首帧闪一下交界面
@@ -1197,16 +1204,7 @@ async function initMap() {
 
   map.on('load', async () => {
     try {
-      MapLayersUtil.registerPoiIcons(map);
-      MapLayersUtil.registerNavArrowIcon(map);
-      MapLayersUtil.registerUserHeadingIcon(map);
-      MapLayers.restackPoiLayers(map);
-      ensureExtraParkingMaps();
-      await loadParkingLabelIcons(map);
-      await applyJunction1005Visibility(map);
-      MapLayers.updateParkingLabelSizeByZoom(map);
-
-      const hasRoute = await resolveRoute();
+      const hasRoute = await routePromise;
 
       if (hasRoute) {
         MapLayers.ensureNavRouteLayers(map, routePoints, { walk: IS_WALK_FLOW });
@@ -1214,34 +1212,11 @@ async function initMap() {
         if (previewPoints.length >= 2 && typeof MapLayers.ensureRoutePreviewLayer === 'function') {
           MapLayers.ensureRoutePreviewLayer(map, previewPoints);
         }
-        if ((NAV_FLOW === 'PARKING_ENTRY' || IS_WALK_FLOW) && SPACE_ID) {
-          MapLayers.highlightTargetSpace(map, SPACE_ID);
-        }
-        // 途径点橙色数字牌；终点 P 牌仅当预览段确实终止于目标车位
-        if (WAYPOINT) {
-          MapLayers.ensureWaypointPinLayer(map, WAYPOINT);
-        }
-        if (DEST_IS_FINAL && destination && SPACE_ID) {
-          MapLayers.ensureDestPinLayer(map, destination, SPACE_ID);
-        }
         seedPuckAtRouteStart();
         applyWalkProfile(map);
         map.resize();
         applyNavCameraPadding();
         focusPreviewCamera();
-        // 跨图后瓦片慢：idle 常落在已走一大段之后。此处禁止任何 jumpTo/easeTo，
-        // 否则会把镜头拽回本图 route[0]，下一帧 hash 再追蓝点。
-        map.once('idle', () => {
-          const c = map.getCenter && map.getCenter();
-          camDiag('map.idle',
-            `noJump hasDisp=${!!(lastDisplay && lastDisplay.location)}`
-            + ` hasPose=${!!renderPose} nav=${navigating}`
-            + ` center=${c ? `${c.lat.toFixed(6)},${c.lng.toFixed(6)}` : '-'}`);
-          if (c) logIfCameraYank('map.idle.center', c.lng, c.lat);
-          map.resize();
-          applyNavCameraPadding();
-          if (WAYPOINT) MapLayers.ensureWaypointPinLayer(map, WAYPOINT);
-        });
         camDiag('map.load',
           `routePts=${routePoints.length} mapId=${MAP_ID} ${routeEnds(routePoints)}`
           + ` gray=${routeEnds(previewPoints)}`);
@@ -1259,9 +1234,41 @@ async function initMap() {
           duration: 0,
         }, CAMERA_EVENT_DATA);
       }
+      signalVisualReady();
       postToMiniProgram({ type: 'h5Ready', routeOk: hasRoute });
       onDisplayFromHash(true);
-      // 不阻塞路线与蓝点首屏；复用 MapLibre 的 WebGL context 延后挂载结构物。
+
+      MapLayersUtil.registerPoiIcons(map);
+      MapLayersUtil.registerNavArrowIcon(map);
+      MapLayersUtil.registerUserHeadingIcon(map);
+      MapLayers.restackPoiLayers(map);
+      ensureExtraParkingMaps();
+      loadParkingLabelIcons(map).then(() => {
+        applyJunction1005Visibility(map);
+        MapLayers.updateParkingLabelSizeByZoom(map);
+        if (hasRoute && (NAV_FLOW === 'PARKING_ENTRY' || IS_WALK_FLOW) && SPACE_ID) {
+          MapLayers.highlightTargetSpace(map, SPACE_ID);
+        }
+        if (hasRoute && WAYPOINT) MapLayers.ensureWaypointPinLayer(map, WAYPOINT);
+        if (hasRoute && DEST_IS_FINAL && destination && SPACE_ID) {
+          MapLayers.ensureDestPinLayer(map, destination, SPACE_ID);
+        }
+      }).catch((e) => {
+        if (window.NavDebug) NavDebug.logError('map.load labels', e);
+      });
+      if (hasRoute) {
+        map.once('idle', () => {
+          const c = map.getCenter && map.getCenter();
+          camDiag('map.idle',
+            `noJump hasDisp=${!!(lastDisplay && lastDisplay.location)}`
+            + ` hasPose=${!!renderPose} nav=${navigating}`
+            + ` center=${c ? `${c.lat.toFixed(6)},${c.lng.toFixed(6)}` : '-'}`);
+          if (c) logIfCameraYank('map.idle.center', c.lng, c.lat);
+          map.resize();
+          applyNavCameraPadding();
+          if (WAYPOINT) MapLayers.ensureWaypointPinLayer(map, WAYPOINT);
+        });
+      }
       scheduleStructureLoad(map);
     } catch (e) {
       if (window.NavDebug) NavDebug.logError('map.on(load)', e);
