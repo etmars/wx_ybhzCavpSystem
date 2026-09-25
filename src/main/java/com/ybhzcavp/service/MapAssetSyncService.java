@@ -41,11 +41,15 @@ public class MapAssetSyncService implements ApplicationRunner {
     private static final Logger log = LoggerFactory.getLogger(MapAssetSyncService.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    /** 地图运行时必需（与 Android MAP_BINARIES + loc_model 对齐） */
-    private static final List<String> SYNC_FILES = List.of(
+    /**
+     * 只同步 catalog assets_crc32 里出现的这些文件。
+     * 定位模型现为 loc_model.bin；没有该键时不要再去拉 loc_model.json。
+     */
+    private static final List<String> KNOWN_ASSETS = List.of(
             "parking.mbtiles",
             "map.osm",
             "wall_grid.bin",
+            "loc_model.bin",
             "loc_model.json"
     );
 
@@ -107,10 +111,13 @@ public class MapAssetSyncService implements ApplicationRunner {
 
         mapDataService.upsertIndexEntries(indexEntries);
         mbtilesService.closeAll();
+        String calib = props.getCalib().getApiBaseUrl();
+        log.info("map-sync via calib={} synced={}/{}", calib, syncedMaps, catalog.size());
         return Map.of(
                 "ok", true,
                 "synced", syncedMaps,
                 "total", catalog.size(),
+                "calib", calib,
                 "maps", details
         );
     }
@@ -125,41 +132,39 @@ public class MapAssetSyncService implements ApplicationRunner {
         List<String> downloaded = new ArrayList<>();
         List<String> skipped = new ArrayList<>();
         List<String> failed = new ArrayList<>();
+        Map<String, String> errors = new LinkedHashMap<>();
         Map<String, String> newManifest = new LinkedHashMap<>(localCrc);
 
-        for (String file : SYNC_FILES) {
+        for (String file : filesInCatalog(remoteCrc)) {
             String remote = remoteCrc.get(file);
             Path target = dir.resolve(file);
-            boolean missing = !Files.exists(target) || Files.size(target) == 0;
-            String local = localCrc.get(file);
-            boolean crcMismatch = remote != null && !remote.isBlank()
-                    && (local == null || !remote.equalsIgnoreCase(local));
-
-            if (!missing && !crcMismatch && remote != null) {
-                skipped.add(file);
-                continue;
+            boolean missing = !Files.isRegularFile(target) || Files.size(target) == 0;
+            String diskCrc = null;
+            if (!missing) {
+                try {
+                    diskCrc = crc32Hex(target);
+                } catch (Exception e) {
+                    missing = true;
+                }
             }
-            if (!missing && (remote == null || remote.isBlank())) {
+            if (!missing && remote.equalsIgnoreCase(diskCrc)) {
                 skipped.add(file);
+                newManifest.put(file, remote.toLowerCase());
                 continue;
             }
 
             try {
-                downloadAsset(entry.mapId(), file, target);
-                if (remote != null && !remote.isBlank()) {
-                    String actual = crc32Hex(target);
-                    if (!remote.equalsIgnoreCase(actual)) {
-                        log.warn("CRC mismatch after download map={} file={} remote={} local={}",
-                                entry.mapId(), file, remote, actual);
-                    }
-                    newManifest.put(file, remote.toLowerCase());
-                } else {
-                    newManifest.put(file, crc32Hex(target));
+                if ("parking.mbtiles".equals(file)) {
+                    mbtilesService.close(entry.mapId());
                 }
+                downloadAsset(entry.mapId(), file, target, remote);
+                newManifest.put(file, remote.toLowerCase());
                 downloaded.add(file);
             } catch (Exception e) {
-                log.warn("download failed map={} file={}: {}", entry.mapId(), file, e.getMessage());
+                String reason = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+                log.warn("download failed map={} file={}: {}", entry.mapId(), file, reason);
                 failed.add(file);
+                errors.put(file, reason);
             }
         }
 
@@ -173,10 +178,24 @@ public class MapAssetSyncService implements ApplicationRunner {
         out.put("downloaded", downloaded);
         out.put("skipped", skipped);
         out.put("failed", failed);
+        if (!errors.isEmpty()) {
+            out.put("errors", errors);
+        }
         return out;
     }
 
-    private void downloadAsset(String mapId, String filename, Path target) throws Exception {
+    private static List<String> filesInCatalog(Map<String, String> remoteCrc) {
+        List<String> files = new ArrayList<>();
+        for (String name : KNOWN_ASSETS) {
+            String crc = remoteCrc.get(name);
+            if (crc != null && !crc.isBlank()) {
+                files.add(name);
+            }
+        }
+        return files;
+    }
+
+    private void downloadAsset(String mapId, String filename, Path target, String expectedCrc) throws Exception {
         String calib = props.getCalib().getApiBaseUrl().replaceAll("/$", "");
         String url = calib + "/api/model/" + filename
                 + "?map_id=" + URLEncoder.encode(mapId, StandardCharsets.UTF_8);
@@ -186,14 +205,27 @@ public class MapAssetSyncService implements ApplicationRunner {
                 .build();
         HttpResponse<InputStream> resp = client.send(req, HttpResponse.BodyHandlers.ofInputStream());
         if (resp.statusCode() != 200) {
-            try (InputStream ignored = resp.body()) {
-                // drain
+            String body = "";
+            try (InputStream in = resp.body()) {
+                body = new String(in.readNBytes(180), StandardCharsets.UTF_8).replaceAll("\\s+", " ");
             }
-            throw new IllegalStateException("HTTP " + resp.statusCode() + " for " + url);
+            throw new IllegalStateException("HTTP " + resp.statusCode() + " " + body + " url=" + url);
         }
         Path tmp = target.resolveSibling(filename + ".tmp");
         try (InputStream in = resp.body(); OutputStream out = Files.newOutputStream(tmp)) {
             in.transferTo(out);
+        }
+        if (Files.size(tmp) < 32) {
+            Files.deleteIfExists(tmp);
+            throw new IllegalStateException("empty body for " + url);
+        }
+        if (expectedCrc != null && !expectedCrc.isBlank()) {
+            String actual = crc32Hex(tmp);
+            if (!expectedCrc.equalsIgnoreCase(actual)) {
+                Files.deleteIfExists(tmp);
+                throw new IllegalStateException(
+                        "CRC mismatch remote=" + expectedCrc + " disk=" + actual + " url=" + url);
+            }
         }
         try {
             Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);

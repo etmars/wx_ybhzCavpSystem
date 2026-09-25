@@ -110,6 +110,21 @@ public class MbtilesService {
         }
     }
 
+    /** 换 parking.mbtiles 前关掉该图连接，避免仍读着旧 inode。 */
+    public void close(String mapId) {
+        if (mapId == null || mapId.isBlank()) {
+            return;
+        }
+        Connection c = connections.remove(mapId);
+        if (c == null) {
+            return;
+        }
+        try {
+            c.close();
+        } catch (Exception ignored) {
+        }
+    }
+
     @PreDestroy
     public void closeAll() {
         for (Connection c : connections.values()) {

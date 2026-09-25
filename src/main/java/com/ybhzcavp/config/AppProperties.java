@@ -215,7 +215,7 @@ public class AppProperties {
     }
 
     public static class Calib {
-        private String apiBaseUrl = "http://parkinglock.c-avp.com:18181";
+        private String apiBaseUrl = "https://parkinglot.c-avp.com:18231";
 
         public String getApiBaseUrl() {
             return apiBaseUrl;

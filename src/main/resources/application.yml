@@ -27,9 +27,11 @@ app:
     parking-space-number: B117
     parking-lng: 116.4915732
     parking-lat: 39.7305491
-    api-base-url: http://parkinglot.c-avp.com:3000
+    # 与 cavp.env 的 PARKING_API_BASE_URL 对齐；不要再用 :3000
+    api-base-url: ${PARKING_API_BASE_URL:https://parkinglot.c-avp.com:3050}
   calib:
-    api-base-url: http://parkinglock.c-avp.com:18181
+    # 与 cavp.env 的 CALIB_API_BASE_URL 对齐。parkinglock:18181 已废弃，资产在 18231
+    api-base-url: ${CALIB_API_BASE_URL:https://parkinglot.c-avp.com:18231}
   navigation:
     arrival-meters: 8.0
     walk-speed-mps: 1.15
