@@ -54,13 +54,15 @@ public final class OsmMapSceneParser {
             List<LabelPoint> parkingLabels,
             List<LabelPoint> poiPoints,
             List<double[][]> speedBumps1003,
-            List<double[][]> lane1004
+            List<double[][]> lane1004,
+            List<double[][]> hdRoads,
+            List<double[][]> laneBounds
     ) {
         static MapScene empty() {
             return new MapScene(0, 0, 0,
                     List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
                     List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
-                    List.of());
+                    List.of(), List.of(), List.of());
         }
 
         /** 减速带（sType=1003）→ GeoJSON FeatureCollection（Polygon）。对齐 NavSpeedBumps 消费格式。 */
@@ -104,6 +106,8 @@ public final class OsmMapSceneParser {
             layers.set("poiPoints", labels(poiPoints));
             layers.set("speedBumps1003", polys(speedBumps1003));
             layers.set("lane1004", polylines(lane1004));
+            layers.set("hdRoads", polylines(hdRoads));
+            layers.set("laneBounds", polylines(laneBounds));
             return root;
         }
 
@@ -248,6 +252,8 @@ public final class OsmMapSceneParser {
             List<LabelPoint> poiPoints = new ArrayList<>();
             List<double[][]> speedBumps1003 = new ArrayList<>();
             List<double[][]> lane1004 = new ArrayList<>();
+            List<double[][]> hdRoads = new ArrayList<>();
+            List<double[][]> laneBounds = new ArrayList<>();
 
             for (Way way : ways) {
                 String sType = way.tags.get("sType");
@@ -320,6 +326,17 @@ public final class OsmMapSceneParser {
                 }
             }
 
+            // HD 路网：与瓦片 road_2005_union / lane_bound 同源。缩略图对齐 Android，不做范围裁切。
+            for (Way way : ways) {
+                List<double[]> coords = resolveCoords(way);
+                if (coords.size() < 2) continue;
+                if (isHdLaneBound(way.tags)) {
+                    laneBounds.add(toArray(coords));
+                } else if (isHdCenterline(way.tags)) {
+                    hdRoads.add(toArray(coords));
+                }
+            }
+
             for (Map.Entry<Long, Map<String, String>> e : nodeTags.entrySet()) {
                 String sType = e.getValue().get("sType");
                 if (sType == null) continue;
@@ -344,10 +361,30 @@ public final class OsmMapSceneParser {
                 centerLon = sumLon / n;
             }
 
+            if (!hdRoads.isEmpty() || !laneBounds.isEmpty()) {
+                log.info("OSM HD layers: hdRoads={} laneBounds={} walls={}",
+                        hdRoads.size(), laneBounds.size(), walls1000.size());
+            }
             return new MapScene(centerLat, centerLon, mapBearingDeg,
                     road2005, road2005Ramp, room2008, parkingFill, parkingEdge, arrow1001,
                     walls1000, blocker100202, blocker100202Edge, parkingLabels, poiPoints,
-                    speedBumps1003, lane1004);
+                    speedBumps1003, lane1004, hdRoads, laneBounds);
+        }
+
+        private static boolean isHdLaneBound(Map<String, String> tags) {
+            return "2".equals(String.valueOf(tags.getOrDefault("bound_type", "")).trim());
+        }
+
+        private static boolean isHdCenterline(Map<String, String> tags) {
+            String bound = String.valueOf(tags.getOrDefault("bound_type", "")).trim();
+            if ("1".equals(bound) || "2".equals(bound)) {
+                return false;
+            }
+            return !isBlank(tags.get("hd_link_id")) || !isBlank(tags.get("lane_id"));
+        }
+
+        private static boolean isBlank(String v) {
+            return v == null || v.isBlank();
         }
 
         private static boolean isClosed(Way way) {

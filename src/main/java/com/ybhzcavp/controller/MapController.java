@@ -56,6 +56,7 @@ public class MapController {
             node.put("map_id", map.id());
             node.put("map_name", map.name());
         }
+        node.put("geometry_rev", "hd1");
         // 缩略图兼容字段（对齐 Android OsmFloorGeometry + RouteThumbnailView）
         MapDataService.FloorGeometry floor = mapDataService.getFloorGeometry(mapId);
         ObjectNode floorJson = floor.toGeoJson();
@@ -74,6 +75,12 @@ public class MapController {
                 node.set("parking", parking);
             } else {
                 node.set("parking", floorJson.get("parking"));
+            }
+            if (layers.has("hdRoads")) {
+                node.set("hdRoads", layers.get("hdRoads"));
+            }
+            if (layers.has("laneBounds")) {
+                node.set("laneBounds", layers.get("laneBounds"));
             }
         } else {
             node.set("walls", floorJson.get("walls"));
