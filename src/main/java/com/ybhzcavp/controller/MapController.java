@@ -147,6 +147,17 @@ public class MapController {
                 .body(mapDataService.readBytes(path));
     }
 
+    @GetMapping("/api/maps/{mapId}/parking.avpmap")
+    public ResponseEntity<byte[]> avpmap(@PathVariable String mapId) throws java.io.IOException {
+        java.nio.file.Path path = mapDataService.resolveAvpmap(mapId);
+        if (path == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok()
+                .header("Content-Type", "application/octet-stream")
+                .body(mapDataService.readBytes(path));
+    }
+
     public record LocateRequest(String mapId, Map<String, Object> rssiMap) {
     }
 }

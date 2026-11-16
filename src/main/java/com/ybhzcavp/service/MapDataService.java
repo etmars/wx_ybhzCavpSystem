@@ -330,6 +330,16 @@ public class MapDataService {
         return Files.exists(path) ? path : null;
     }
 
+    /** 自研渲染器的预烘焙地图 parking.avpmap；未烘焙/未同步时返回 null。 */
+    public Path resolveAvpmap(String mapId) {
+        MapEntry entry = resolveMap(mapId);
+        if (entry == null) {
+            return null;
+        }
+        Path path = dataRoot.resolve("maps").resolve(entry.id()).resolve("parking.avpmap");
+        return Files.exists(path) ? path : null;
+    }
+
     public record MapEntry(String id, String name, Path osmFile, Path mbtilesFile, Path locModel) {
     }
 

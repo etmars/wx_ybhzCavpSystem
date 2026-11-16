@@ -47,6 +47,7 @@ public class MapAssetSyncService implements ApplicationRunner {
      */
     private static final List<String> KNOWN_ASSETS = List.of(
             "parking.mbtiles",
+            "parking.avpmap",
             "map.osm",
             "wall_grid.bin",
             "loc_model.bin",
