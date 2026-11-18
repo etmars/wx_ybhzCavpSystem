@@ -86,5 +86,44 @@
     return parseFeatures(geojson);
   }
 
-  window.NavSpeedBumps = { createSpeedBumpTracker, fetchSpeedBumps, parseFeatures };
+  function bumpsFromMap(map) {
+    const data = map && map.getData ? map.getData() : null;
+    return parseFeatures(data && data.navSpeedbumps);
+  }
+
+  /** 优先使用 .avpmap 的 NAVS，缺失时回退服务端 GeoJSON，并用动态线画在路上。 */
+  async function render(map, apiBase, mapId) {
+    if (!map || typeof map.addSource !== 'function') return [];
+    let bumps = bumpsFromMap(map);
+    if (!bumps.length && apiBase && mapId) bumps = await fetchSpeedBumps(apiBase, mapId);
+    const features = bumps.map((bump) => ({
+      type: 'Feature',
+      properties: { id: bump.id },
+      geometry: {
+        type: 'LineString',
+        coordinates: bump.polygon.map((point) => [point.longitude, point.latitude]),
+      },
+    }));
+    const collection = { type: 'FeatureCollection', features };
+    if (!map.getSource('nav-speed-bumps')) {
+      map.addSource('nav-speed-bumps', { type: 'geojson', data: collection });
+      map.addLayer({
+        id: 'nav-speed-bumps-line',
+        type: 'line',
+        source: 'nav-speed-bumps',
+        paint: { 'line-color': '#f5c542', 'line-width': 3, 'line-opacity': 0.95 },
+      });
+    } else {
+      map.getSource('nav-speed-bumps').setData(collection);
+    }
+    return bumps;
+  }
+
+  window.NavSpeedBumps = {
+    createSpeedBumpTracker,
+    fetchSpeedBumps,
+    parseFeatures,
+    bumpsFromMap,
+    render,
+  };
 }());

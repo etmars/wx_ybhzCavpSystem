@@ -1,6 +1,6 @@
 /* eslint-disable */
 /**
- * 宜泊慧智 C-AVP H5 — MapLibre 纯渲染层（UI 在小程序 cover-view）
+ * 宜泊慧智 C-AVP H5 — AvpMap 纯渲染层（UI 在小程序 cover-view）
  */
 
 function getQuery() {
@@ -11,10 +11,10 @@ function getQuery() {
 
 const Q = getQuery();
 const T = window.NavTuning;
-const TILES_BASE = Q.tiles_base || 'https://parkinglot.c-avp.com:9065/tiles';
 const MAP_ID = Q.map_id || 'gqyq';
-const TILES_USE_MAP_ID = Q.tiles_use_map_id !== '0';
-const TILES_V = (Q.tiles_v || '').trim();
+const API_BASE = Q.api_base || window.location.origin;
+const MODEL_TOKEN = Q.model_token || '';
+const avpKeyCache = new Map();
 const MAP_IDS = (() => {
   const raw = String(Q.map_ids || '').split(',').map((s) => s.trim()).filter(Boolean);
   const ids = [];
@@ -27,29 +27,43 @@ const MAP_IDS = (() => {
   });
   return ids;
 })();
-const MAP_IDS_QUERY = String(Q.map_ids || '').split(',').map((s) => s.trim()).filter(Boolean);
-const TILES_VS = String(Q.tiles_vs || '').split(',').map((s) => s.trim());
-function tilesUrlForMap(mapId) {
-  const base = TILES_USE_MAP_ID
-    ? `${TILES_BASE}/{z}/{x}/{y}.pbf?map_id=${encodeURIComponent(mapId)}`
-    : `${TILES_BASE}/{z}/{x}/{y}.pbf`;
-  let v = '';
-  const idx = MAP_IDS_QUERY.indexOf(mapId);
-  if (idx >= 0 && TILES_VS[idx]) v = TILES_VS[idx];
-  if (!v && String(mapId) === String(MAP_ID)) v = TILES_V;
-  if (!v) return base;
-  return `${base}${base.includes('?') ? '&' : '?'}v=${encodeURIComponent(v)}`;
+function avpMapUrlForMap(mapId) {
+  return `${API_BASE}/api/maps/${encodeURIComponent(mapId)}/avpmap`;
 }
-const TILES_URL = tilesUrlForMap(MAP_ID);
+function avpMapReadOptions(mapId) {
+  return {
+    mapId,
+    keyProvider(keyId) {
+      const cacheKey = `${mapId}:${keyId}`;
+      if (!avpKeyCache.has(cacheKey)) {
+        avpKeyCache.set(cacheKey, (async () => {
+          const response = await fetch(
+            `${API_BASE}/api/maps/${encodeURIComponent(mapId)}/avpmap-key?key_id=${keyId}`,
+            {
+              cache: 'no-store',
+              headers: MODEL_TOKEN ? { 'X-Model-Token': MODEL_TOKEN } : {},
+            },
+          );
+          if (!response.ok) throw new Error(`avpmap key HTTP ${response.status}`);
+          const payload = await response.json();
+          if (!payload.cek) throw new Error('avpmap key response missing cek');
+          const binary = atob(payload.cek);
+          const key = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+          if (key.byteLength !== 32) throw new Error(`invalid avpmap CEK length ${key.byteLength}`);
+          return key;
+        })());
+      }
+      return avpKeyCache.get(cacheKey);
+    },
+  };
+}
+function structureBaseForMap(mapId) {
+  return `${API_BASE}/api/maps/${encodeURIComponent(mapId)}/structures`;
+}
 const MAP_BEARING = parseFloat(Q.map_bearing) || 0;
-const GEO_API = Q.geo_api || `https://parkinglot.c-avp.com:9065/api/maps/${MAP_ID}/geometry`;
 const ROUTE_API = Q.route_api || 'https://parkinglot.c-avp.com:9065/api/nav/route';
-const API_BASE = Q.api_base || window.location.origin;
 const NAV_FLOW = Q.nav_flow || 'PARKING_ENTRY';
 const AUTO_START = Q.auto_start === '1';
-const STRUCTURE_3D_ENABLED = Q.structures_3d !== '0';
-const STRUCTURE_DEFER_MS = Math.max(0, parseInt(Q.structures_defer_ms || '800', 10) || 0);
-const STRUCTURE_MAX_POINTS = Math.max(1, parseInt(Q.structures_max_points || '36', 10) || 36);
 
 const SPACE_ID = Q.space_id || '';
 const SESSION_ID = Q.session_id || 'default';
@@ -97,7 +111,6 @@ let lastPoseRecvMs = 0;
 let lastRouteProgressDrawMs = 0;
 let cachedPadding = null;
 let cachedPaddingHeight = -1;
-let structureLoadTimer = null;
 
 const USER_INTERACT_RESUME_MS = 3000;
 const POSE_TWEEN_MIN_MS = 60;
@@ -106,7 +119,7 @@ const POSE_TWEEN_MAX_MS = 700;
 const POSE_TWEEN_MAX_JUMP_M = 25;
 /** 折线进度是按里程重切 O(n) 折线，不需要跟蓝点同帧率 */
 const ROUTE_PROGRESS_MIN_MS = 120;
-/** 程序化相机移动的标记：MapLibre 的 rotatestart/zoomstart/pitchstart 对 easeTo 同样会触发 */
+/** 程序化相机移动标记。 */
 const CAMERA_EVENT_DATA = { navAuto: true };
 
 /** 镜头/蓝点被拉回诊断：只打可疑事件，带简短调用栈 */
@@ -506,7 +519,7 @@ async function resolveRoute() {
 
 /**
  * 让蓝点固定停在屏幕下方，前方路径留出上方视野。
- * MapLibre 把中心点摆在「扣掉 padding 后」区域的中心，所以是加 top padding 把点压低：
+ * 地图把中心点摆在「扣掉 padding 后」区域的中心，所以加 top padding 把点压低：
  * (top + h) / 2 = ratio * h  →  top = (2 * ratio - 1) * h。
  */
 function navCameraPadding() {
@@ -628,7 +641,7 @@ function updateNavCamera(loc, cameraBearing, force, navParked, smooth) {
 
 /**
  * 预览相机方位：route-up，让起点前方路径竖直向上。
- * MapLibre 的 bearing 与路线点同处图纸 CRS（+lat=图北），直接用路线前向角。
+ * bearing 与路线点同处图纸 CRS（+lat=图北），直接用路线前向角。
  * map_bearing（如 ziguang=327°）是罗盘真北偏移，叠进去会把路径拧斜。
  */
 function previewCameraBearing() {
@@ -898,9 +911,62 @@ function resolveHashMapId(meta) {
   return String(meta.activeMap || '').trim();
 }
 
+let mapThemeName = '';
+let occupancyLists = { occupied: [], reserved: [] };
+let occupancyTimer = null;
+
+function currentThemeName() {
+  const hash = window.location.hash || '';
+  const matched = hash.match(/(?:^|#|&)theme=(light|dark)(?:&|$)/i);
+  if (matched) return matched[1].toLowerCase();
+  if (window.MapTheme) return MapTheme.resolveTheme(Q.theme);
+  return 'dark';
+}
+
+function refreshMapChrome() {
+  if (!map || !window.MapTheme || !window.IndoorMapPalette) return;
+  const theme = currentThemeName();
+  mapThemeName = theme;
+  MapTheme.applyTheme(map, theme, MAP_IDS, MAP_ID);
+  MapTheme.applyOccupancy(map, theme, occupancyLists, SPACE_ID, MAP_IDS, MAP_ID);
+}
+
+async function pollSpotOccupancy() {
+  if (!PARKING_LOT_ID || !window.ParkingSpotOccupancy || !window.MapTheme) return;
+  const base = String(Q.parking_api || 'https://parkinglot.c-avp.com:3050').replace(/\/$/, '');
+  try {
+    const res = await fetch(`${base}/avp/totalparking?parkingId=${encodeURIComponent(PARKING_LOT_ID)}`);
+    if (!res.ok) return;
+    const body = await res.json();
+    const rows = body && body.data;
+    occupancyLists = ParkingSpotOccupancy.listsFromRows(Array.isArray(rows) ? rows : []);
+    if (map) {
+      MapTheme.applyOccupancy(map, mapThemeName || currentThemeName(), occupancyLists, SPACE_ID, MAP_IDS, MAP_ID);
+    }
+  } catch (e) { /* 着色失败不影响导航 */ }
+}
+
+function startMapChrome() {
+  refreshMapChrome();
+  if (occupancyTimer) clearInterval(occupancyTimer);
+  pollSpotOccupancy();
+  occupancyTimer = setInterval(pollSpotOccupancy, 15000);
+  try {
+    const mq = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)');
+    if (mq && mq.addEventListener) {
+      mq.addEventListener('change', () => {
+        const pinned = /(?:^|#|&)theme=(light|dark)(?:&|$)/i.test(window.location.hash || '') || Q.theme;
+        if (!pinned) refreshMapChrome();
+      });
+    }
+  } catch (e) { /* ignore */ }
+}
+
 function onDisplayFromHash(forceCamera) {
   if (!window.DisplayBridge) return;
   const rawHash = window.location.hash || '';
+  const nextTheme = currentThemeName();
+  if (map && nextTheme !== mapThemeName) refreshMapChrome();
   const meta = window.DisplayBridge.decodeDisplayMeta(rawHash);
   const junc = (Number.isFinite(meta.jlat) && Number.isFinite(meta.jlon))
     ? { latitude: meta.jlat, longitude: meta.jlon }
@@ -988,128 +1054,44 @@ async function loadParkingLabelIcons(mapInstance, mapId) {
   }
 }
 
-async function loadStructurePoints(mapInstance, mapId) {
-  if (!STRUCTURE_3D_ENABLED || !window.Structure3D || !mapInstance) return;
-  const mid = mapId || activeMapId || MAP_ID;
-  const controller = typeof AbortController === 'function' ? new AbortController() : null;
-  const timeout = controller ? setTimeout(() => controller.abort(), 8000) : null;
-  try {
-    const url = `${API_BASE}/api/maps/${encodeURIComponent(mid)}/special-points`;
-    const res = await fetch(url, controller ? { signal: controller.signal } : undefined);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const body = await res.json();
-    const raw = Array.isArray(body) ? body : body && body.data;
-    const points = (Array.isArray(raw) ? raw : [])
-      .filter((point) => point && String(point.mapId || point.map_id || mid) === String(mid))
-      .slice(0, STRUCTURE_MAX_POINTS);
-    const count = Structure3D.ensureStructureLayer(mapInstance, maplibregl, points, {
-      onModelError(type, error) {
-        postToMiniProgram({
-          type: 'structure3dError',
-          modelType: type,
-          message: String((error && error.message) || error || 'GLB load failed').slice(0, 160),
-        });
-      },
-    });
-    console.info(`[structure-3d] map=${mid} points=${count}`);
-    postToMiniProgram({ type: 'structure3dReady', mapId: mid, count });
-  } catch (error) {
-    console.warn('[structure-3d] 点位加载失败', error);
-    postToMiniProgram({
-      type: 'structure3dError',
-      message: String((error && error.message) || error || 'special-points failed').slice(0, 160),
-    });
-  } finally {
-    if (timeout) clearTimeout(timeout);
-  }
-}
-
-function scheduleStructureLoad(mapInstance) {
-  if (!STRUCTURE_3D_ENABLED || !window.Structure3D) return;
-  if (structureLoadTimer) clearTimeout(structureLoadTimer);
-  structureLoadTimer = setTimeout(() => {
-    structureLoadTimer = null;
-    loadStructurePoints(mapInstance, activeMapId);
-  }, STRUCTURE_DEFER_MS);
-}
-
 function ensureExtraParkingMaps() {
-  if (!map || !window.MapLayers || !MapLayers.addHiddenParkingMap) return;
-  const extras = MAP_IDS.filter((id) => id && String(id) !== String(MAP_ID));
-  console.info(`[CamDiag] ensureExtraParkingMaps primary=${MAP_ID} extras=${extras.join(',') || '-'}`);
-  extras.forEach((id) => {
-    const src = MapLayers.addHiddenParkingMap(map, {
-      mapId: id,
-      tilesUrl: tilesUrlForMap(id),
-      primaryMapId: MAP_ID,
-    });
-    const n = MapLayers.parkingLayersForMap
-      ? MapLayers.parkingLayersForMap(map, id, MAP_ID).length
-      : -1;
-    console.info(`[CamDiag] preloaded map=${id} source=${src || '-'} layers=${n}`);
-    loadParkingLabelIcons(map, id);
-  });
   if (typeof MapLayers.ensureUserPuckOnTop === 'function') {
     MapLayers.ensureUserPuckOnTop(map);
   }
 }
 
-function switchVisibleMap(nextMapId) {
+async function switchVisibleMap(nextMapId) {
   const want = String(nextMapId || '').trim();
   if (!want || !map || want === String(activeMapId)) return;
   const prev = activeMapId;
-  // 切到未预挂载的图：现场补源（兼容旧链接无 map_ids）
-  if (String(want) !== String(MAP_ID)
-    && window.MapLayers
-    && MapLayers.parkingSourceId
-    && !map.getSource(MapLayers.parkingSourceId(want, MAP_ID))) {
-    if (MapLayers.addHiddenParkingMap) {
-      MapLayers.addHiddenParkingMap(map, {
-        mapId: want,
-        tilesUrl: tilesUrlForMap(want),
-        primaryMapId: MAP_ID,
-      });
-      loadParkingLabelIcons(map, want);
-      camDiag('switchMap addSource', want);
+  try {
+    await map.loadAvpMap(
+      avpMapUrlForMap(want),
+      structureBaseForMap(want),
+      avpMapReadOptions(want),
+    );
+    if (window.NavSpeedBumps) await NavSpeedBumps.render(map, API_BASE, want);
+    activeMapId = want;
+    try { sessionStorage.setItem(`navActiveMap:${SESSION_ID}`, want); } catch (e) { /* ignore */ }
+    refreshMapChrome();
+    if (SPACE_ID && MapLayers.highlightTargetSpace) {
+      MapLayers.highlightTargetSpace(map, SPACE_ID);
     }
-  }
-  let nHide = 0;
-  let nShow = 0;
-  if (MapLayers.setParkingMapVisible) {
-    nHide = MapLayers.setParkingMapVisible(map, prev, false, MAP_ID) || 0;
-    nShow = MapLayers.setParkingMapVisible(map, want, true, MAP_ID) || 0;
-  }
-  // 兜底：克隆层未就绪时再补挂一次 hidden source
-  if (nShow === 0 && String(want) !== String(MAP_ID) && MapLayers.addHiddenParkingMap) {
-    MapLayers.addHiddenParkingMap(map, {
-      mapId: want,
-      tilesUrl: tilesUrlForMap(want),
-      primaryMapId: MAP_ID,
-    });
-    loadParkingLabelIcons(map, want);
-    nHide = MapLayers.setParkingMapVisible(map, prev, false, MAP_ID) || nHide;
-    nShow = MapLayers.setParkingMapVisible(map, want, true, MAP_ID) || 0;
-    if (nShow === 0) {
-      console.warn(`[switchMap] showLayers still 0 map=${want} prev=${prev}`);
+    if (routePoints.length >= 2) {
+      MapLayers.ensureNavRouteLayers(map, routePoints, { walk: IS_WALK_FLOW });
+      MapLayers.updateDirectionArrows(map, routePoints);
+      MapLayers.updateRouteProgressByMeters(map, routePoints, renderPose ? renderPose.prog : 0, routeMetrics);
     }
+    if (renderPose) updateUserPuck(
+      { longitude: renderPose.lon, latitude: renderPose.lat },
+      renderPose.hdg,
+    );
+    applyWalkProfile(map);
+    camDiag('switchMap', `${prev} → ${want} avpmap reloaded`);
+  } catch (error) {
+    console.warn(`[switchMap] avpmap load failed map=${want}`, error);
+    postToMiniProgram({ type: 'mapSwitchError', mapId: want, message: String(error.message || error) });
   }
-  activeMapId = want;
-  try { sessionStorage.setItem(`navActiveMap:${SESSION_ID}`, want); } catch (e) { /* ignore */ }
-  if ((NAV_FLOW === 'PARKING_ENTRY' || IS_WALK_FLOW)
-      && SPACE_ID && MapLayers.highlightTargetSpace) {
-    const src = MapLayers.parkingSourceId(want, MAP_ID);
-    const above = MapLayers.parkingLayerId('parking-fill', want, MAP_ID);
-    MapLayers.highlightTargetSpace(map, SPACE_ID, src, above);
-  }
-  if (typeof MapLayers.ensureUserPuckOnTop === 'function') {
-    MapLayers.ensureUserPuckOnTop(map);
-  }
-  if (window.Structure3D && Structure3D.removeStructureLayer) {
-    try { Structure3D.removeStructureLayer(map); } catch (e) { /* ignore */ }
-  }
-  loadStructurePoints(map, want);
-  applyWalkProfile(map);
-  camDiag('switchMap', `${prev} → ${want} hideLayers=${nHide} showLayers=${nShow}`);
 }
 
 const JUNCTION_1005_LAYER_IDS = [
@@ -1162,48 +1144,29 @@ function signalVisualReady() {
 }
 
 async function initMap() {
+  if (!window.AvpMapWeb || typeof window.AvpMapWeb.isSupported !== 'function'
+    || !window.AvpMapWeb.isSupported()) {
+    const error = new Error('当前 WebView 不支持 WebGL2，无法显示室内导航地图');
+    showMapLoadError(error);
+    postToMiniProgram({ type: 'avpmapUnsupported', reason: error.message });
+    return;
+  }
   const routePromise = resolveRoute();
-  const tuningPromise = window.NavTuning.fetchRemote(API_BASE, MAP_ID).catch(() => {});
-  const geoPromise = fetch(GEO_API).then((res) => res.json()).catch((e) => {
-    console.warn('geo api failed', e);
-    return null;
-  });
-  const stylePromise = fetch('./map-style.json?v=hdroad5').then((res) => res.json());
-  const [style, geo] = await Promise.all([stylePromise, geoPromise, tuningPromise]);
-
-  let center = [116.4914516, 39.7300906];
-  if (geo && geo.centerLon != null && geo.centerLat != null) {
-    center = [geo.centerLon, geo.centerLat];
-  }
-  mapCenter = center;
-  style.sources['parking-source'].tiles = [TILES_URL];
-  MapLayers.addExtraStyleLayers(style);
-  // 已知单图时在创建 Map 前关掉 1005，避免首帧闪一下交界面
-  if (LOT_MAP_COUNT === 1 && Array.isArray(style.layers)) {
-    JUNCTION_1005_LAYER_IDS.forEach((id) => {
-      const layer = style.layers.find((l) => l && l.id === id);
-      if (layer) {
-        layer.layout = Object.assign({}, layer.layout || {}, { visibility: 'none' });
-      }
-    });
-  }
-
-  map = new maplibregl.Map({
+  await window.NavTuning.fetchRemote(API_BASE, MAP_ID).catch(() => {});
+  mapCenter = [116.4914516, 39.7300906];
+  map = new AvpMapAdapter.Map({
     container: 'map',
-    style,
-    center,
     zoom: navCameraZoom(),
-    maxZoom: 21,
-    minZoom: 16,
     pitch: navCameraPitch(),
-    // 图纸 CRS：bearing 0 = 图北朝上。MAP_BEARING 是罗盘偏移，不能当初始相机角。
     bearing: 0,
-    antialias: true,
-    attributionControl: false,
   });
 
   map.on('load', async () => {
     try {
+      const avpData = map.getData && map.getData();
+      if (avpData && avpData.meta && Array.isArray(avpData.meta.mapCenter)) {
+        mapCenter = avpData.meta.mapCenter;
+      }
       const hasRoute = await routePromise;
 
       if (hasRoute) {
@@ -1269,7 +1232,6 @@ async function initMap() {
           if (WAYPOINT) MapLayers.ensureWaypointPinLayer(map, WAYPOINT);
         });
       }
-      scheduleStructureLoad(map);
     } catch (e) {
       if (window.NavDebug) NavDebug.logError('map.on(load)', e);
       showMapLoadError(e);
@@ -1285,14 +1247,21 @@ async function initMap() {
   map.on('zoom', scheduleParkingLabelRefresh);
   map.on('zoomend', scheduleParkingLabelRefresh);
   map.getCanvas().addEventListener('webglcontextlost', () => {
-    console.warn('[structure-3d] WebGL context lost');
-    postToMiniProgram({ type: 'structure3dContextLost', mapId: MAP_ID });
+    console.warn('[avpmap] WebGL context lost');
+    postToMiniProgram({ type: 'avpmapContextLost', mapId: activeMapId });
   });
   map.getCanvas().addEventListener('webglcontextrestored', () => {
-    console.info('[structure-3d] WebGL context restored');
-    postToMiniProgram({ type: 'structure3dContextRestored', mapId: MAP_ID });
+    console.info('[avpmap] WebGL context restored');
+    postToMiniProgram({ type: 'avpmapContextRestored', mapId: activeMapId });
   });
 
+  await map.loadAvpMap(
+    avpMapUrlForMap(MAP_ID),
+    structureBaseForMap(MAP_ID),
+    avpMapReadOptions(MAP_ID),
+  );
+  if (window.NavSpeedBumps) await NavSpeedBumps.render(map, API_BASE, MAP_ID);
+  startMapChrome();
   window.__map = map;
 }
 

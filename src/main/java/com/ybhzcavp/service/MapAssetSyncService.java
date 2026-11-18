@@ -58,6 +58,7 @@ public class MapAssetSyncService implements ApplicationRunner {
     private final MapDataService mapDataService;
     private final MbtilesService mbtilesService;
     private final ParkinglotMachineAuth machineAuth;
+    private final AvpMapKeyService avpMapKeyService;
     private final HttpClient client = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(15))
             .followRedirects(HttpClient.Redirect.NORMAL)
@@ -67,12 +68,14 @@ public class MapAssetSyncService implements ApplicationRunner {
             AppProperties props,
             MapDataService mapDataService,
             MbtilesService mbtilesService,
-            ParkinglotMachineAuth machineAuth
+            ParkinglotMachineAuth machineAuth,
+            AvpMapKeyService avpMapKeyService
     ) {
         this.props = props;
         this.mapDataService = mapDataService;
         this.mbtilesService = mbtilesService;
         this.machineAuth = machineAuth;
+        this.avpMapKeyService = avpMapKeyService;
     }
 
     @Override
@@ -200,10 +203,13 @@ public class MapAssetSyncService implements ApplicationRunner {
         String calib = props.getCalib().getApiBaseUrl().replaceAll("/$", "");
         String url = calib + "/api/model/" + filename
                 + "?map_id=" + URLEncoder.encode(mapId, StandardCharsets.UTF_8);
-        HttpRequest req = HttpRequest.newBuilder(URI.create(url))
-                .timeout(Duration.ofMinutes(5))
-                .GET()
-                .build();
+        HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(url))
+                .timeout(Duration.ofMinutes(5));
+        String modelAuth = avpMapKeyService.webAuthHeader(mapId, "cavp-map-sync");
+        if (!modelAuth.isBlank()) {
+            request.header("X-Model-Auth", modelAuth);
+        }
+        HttpRequest req = request.GET().build();
         HttpResponse<InputStream> resp = client.send(req, HttpResponse.BodyHandlers.ofInputStream());
         if (resp.statusCode() != 200) {
             String body = "";

@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <meta name="referrer" content="no-referrer" />
+  <title>AVP Map</title>
+  <style>
+    html, body, #map { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    body { background: #071018; }
+    #error {
+      position: fixed; inset: auto 12px 12px; z-index: 10; padding: 10px 12px;
+      border-radius: 6px; color: #fff; background: rgba(160, 20, 20, .92);
+      font: 13px/1.45 sans-serif; pointer-events: none;
+    }
+    #error:empty { display: none; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div id="error" role="alert"></div>
+  <script src="./avpmap-web.iife.js"></script>
+  <script src="./host.js"></script>
+</body>
+</html>

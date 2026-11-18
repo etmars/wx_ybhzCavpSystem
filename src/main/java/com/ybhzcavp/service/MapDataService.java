@@ -332,12 +332,39 @@ public class MapDataService {
 
     /** 自研渲染器的预烘焙地图 parking.avpmap；未烘焙/未同步时返回 null。 */
     public Path resolveAvpmap(String mapId) {
-        MapEntry entry = resolveMap(mapId);
-        if (entry == null) {
+        return resolveMapAsset(mapId, Path.of("parking.avpmap"));
+    }
+
+    /** 地图专属的预烘焙结构网格；name 不含 .mesh。 */
+    public Path resolveStructureMesh(String mapId, String name) {
+        if (name == null || !name.matches("[A-Za-z0-9][A-Za-z0-9_-]*")) {
             return null;
         }
-        Path path = dataRoot.resolve("maps").resolve(entry.id()).resolve("parking.avpmap");
-        return Files.exists(path) ? path : null;
+        return resolveMapAsset(mapId, Path.of("structures", name + ".mesh"));
+    }
+
+    /** 优先使用同步清单中的 CRC32；无清单项时沿用瓦片的 mtime-size ETag 口径。 */
+    public String assetEtag(String mapId, String assetName, Path path) throws IOException {
+        Path manifest = assetsCrcManifest(mapId);
+        if (Files.isRegularFile(manifest)) {
+            JsonNode crc = MAPPER.readTree(manifest.toFile()).get(assetName);
+            if (crc != null && crc.isTextual() && crc.asText().matches("(?i)[0-9a-f]{8}")) {
+                return "\"crc32-" + crc.asText().toLowerCase() + "\"";
+            }
+        }
+        return "\"" + Files.getLastModifiedTime(path).toMillis() + "-" + Files.size(path) + "\"";
+    }
+
+    private Path resolveMapAsset(String mapId, Path relativePath) {
+        if (mapId == null || !mapsById.containsKey(mapId)) {
+            return null;
+        }
+        Path mapRoot = dataRoot.resolve("maps").resolve(mapId).normalize();
+        Path path = mapRoot.resolve(relativePath).normalize();
+        if (!path.startsWith(mapRoot) || !Files.isRegularFile(path)) {
+            return null;
+        }
+        return path;
     }
 
     public record MapEntry(String id, String name, Path osmFile, Path mbtilesFile, Path locModel) {

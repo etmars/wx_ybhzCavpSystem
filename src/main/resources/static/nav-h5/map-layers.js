@@ -722,6 +722,10 @@ function addHiddenParkingMap(map, opts) {
 }
 
 function highlightTargetSpace(map, spaceId, sourceId, aboveLayerId) {
+  if (map && typeof map.setTargetSpace === 'function') {
+    map.setTargetSpace(spaceId);
+    return;
+  }
   const src = sourceId || 'parking-source';
   const above = aboveLayerId || 'parking-fill';
   if (!spaceId || !map.getSource(src)) return;

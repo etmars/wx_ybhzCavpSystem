@@ -2,11 +2,15 @@ package com.ybhzcavp.controller;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.ybhzcavp.service.LocateService;
+import com.ybhzcavp.service.AvpMapKeyService;
 import com.ybhzcavp.service.MapDataService;
 import com.ybhzcavp.service.MbtilesService;
 import com.ybhzcavp.service.NavSpeedBumpsService;
 import com.ybhzcavp.service.NavTuningProxyService;
 import com.ybhzcavp.service.ParkingService;
+import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -15,6 +19,10 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.io.IOException;
+import java.nio.file.Path;
+import java.time.Duration;
+import java.util.Arrays;
 import java.util.Map;
 
 @RestController
@@ -26,16 +34,19 @@ public class MapController {
     private final NavTuningProxyService navTuningProxyService;
     private final NavSpeedBumpsService navSpeedBumpsService;
     private final ParkingService parkingService;
+    private final AvpMapKeyService avpMapKeyService;
 
     public MapController(MapDataService mapDataService, MbtilesService mbtilesService,
                          LocateService locateService, NavTuningProxyService navTuningProxyService,
-                         NavSpeedBumpsService navSpeedBumpsService, ParkingService parkingService) {
+                         NavSpeedBumpsService navSpeedBumpsService, ParkingService parkingService,
+                         AvpMapKeyService avpMapKeyService) {
         this.mapDataService = mapDataService;
         this.mbtilesService = mbtilesService;
         this.locateService = locateService;
         this.navTuningProxyService = navTuningProxyService;
         this.navSpeedBumpsService = navSpeedBumpsService;
         this.parkingService = parkingService;
+        this.avpMapKeyService = avpMapKeyService;
     }
 
     @GetMapping("/tiles/{z}/{x}/{y}.pbf")
@@ -147,15 +158,60 @@ public class MapController {
                 .body(mapDataService.readBytes(path));
     }
 
-    @GetMapping("/api/maps/{mapId}/parking.avpmap")
-    public ResponseEntity<byte[]> avpmap(@PathVariable String mapId) throws java.io.IOException {
-        java.nio.file.Path path = mapDataService.resolveAvpmap(mapId);
+    @GetMapping({"/api/maps/{mapId}/avpmap", "/api/maps/{mapId}/parking.avpmap"})
+    public ResponseEntity<byte[]> avpmap(
+            @PathVariable String mapId,
+            @org.springframework.web.bind.annotation.RequestHeader(
+                    value = HttpHeaders.IF_NONE_MATCH, required = false) String ifNoneMatch) throws IOException {
+        Path path = mapDataService.resolveAvpmap(mapId);
+        return serveAsset(mapId, "parking.avpmap", path, ifNoneMatch);
+    }
+
+    @GetMapping("/api/maps/{mapId}/avpmap-key")
+    public ResponseEntity<byte[]> avpmapKey(
+            @PathVariable String mapId,
+            @RequestParam(name = "key_id") int keyId,
+            @org.springframework.web.bind.annotation.RequestHeader(
+                    value = "X-Model-Token", required = false) String modelToken) {
+        return avpMapKeyService.fetchWithWxToken(mapId, keyId, modelToken);
+    }
+
+    @GetMapping("/api/maps/{mapId}/structures/{name}.mesh")
+    public ResponseEntity<byte[]> structureMesh(
+            @PathVariable String mapId,
+            @PathVariable String name,
+            @org.springframework.web.bind.annotation.RequestHeader(
+                    value = HttpHeaders.IF_NONE_MATCH, required = false) String ifNoneMatch) throws IOException {
+        Path path = mapDataService.resolveStructureMesh(mapId, name);
+        return serveAsset(mapId, "structures/" + name + ".mesh", path, ifNoneMatch);
+    }
+
+    private ResponseEntity<byte[]> serveAsset(
+            String mapId, String assetName, Path path, String ifNoneMatch) throws IOException {
         if (path == null) {
             return ResponseEntity.notFound().build();
         }
-        return ResponseEntity.ok()
-                .header("Content-Type", "application/octet-stream")
-                .body(mapDataService.readBytes(path));
+        String etag = mapDataService.assetEtag(mapId, assetName, path);
+        HttpHeaders headers = new HttpHeaders();
+        headers.set(HttpHeaders.CONTENT_TYPE, "application/octet-stream");
+        headers.setETag(etag);
+        headers.setCacheControl(CacheControl.maxAge(Duration.ZERO).cachePrivate().mustRevalidate());
+        headers.set("Content-Encoding", "identity");
+        if (etagMatches(ifNoneMatch, etag)) {
+            return new ResponseEntity<>(null, headers, HttpStatus.NOT_MODIFIED);
+        }
+        return new ResponseEntity<>(mapDataService.readBytes(path), headers, HttpStatus.OK);
+    }
+
+    private static boolean etagMatches(String ifNoneMatch, String etag) {
+        if (ifNoneMatch == null || ifNoneMatch.isBlank()) {
+            return false;
+        }
+        return Arrays.stream(ifNoneMatch.split(","))
+                .map(String::trim)
+                .anyMatch(candidate -> "*".equals(candidate)
+                        || etag.equals(candidate)
+                        || etag.equals(candidate.replaceFirst("^W/", "")));
     }
 
     public record LocateRequest(String mapId, Map<String, Object> rssiMap) {
