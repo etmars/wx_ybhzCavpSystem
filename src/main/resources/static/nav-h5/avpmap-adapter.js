@@ -287,31 +287,15 @@
           dynamicIds.push(id);
         });
       } else if (layer.type === 'circle') {
-        const opacity = Number(value(layer.paint['circle-opacity'], null, 1));
-        if (opacity > 0) {
-          const radius = Number(value(layer.paint['circle-radius'], null, 8));
-          const stroke = Number(value(layer.paint['circle-stroke-width'], null, 0));
-          if (stroke > 0) {
-            const strokeId = `layer:${layer.id}:stroke`;
-            this._native.setSource(strokeId, {
-              type: 'marker',
-              data,
-              color: cssColor(layer.paint['circle-stroke-color'], '#ffffff'),
-              size: (radius + stroke) * 2,
-              order,
-            });
-            dynamicIds.push(strokeId);
-          }
-          const id = `layer:${layer.id}`;
-          this._native.setSource(id, {
-            type: 'marker',
-            data,
-            color: cssColor(layer.paint['circle-color'], '#3e86ec'),
-            size: radius * 2,
-            order: order + 0.1,
-          });
-          dynamicIds.push(id);
-        }
+        const id = `layer:${layer.id}`;
+        this._native.setSource(id, {
+          type: 'marker',
+          data,
+          color: cssColor(layer.paint['circle-color'], '#3e86ec'),
+          size: Number(value(layer.paint['circle-radius'], null, 8)) * 2,
+          order,
+        });
+        dynamicIds.push(id);
       }
       this._dynamicIds.set(layer.id, dynamicIds);
     }
@@ -329,25 +313,16 @@
       return this;
     }
     _rebuildAtlas() {
-      const extras = [...this._images].map(([key, image]) => ({
+      if (!this._images.size) return;
+      const items = [...this._images].map(([key, image]) => ({
         key, image, width: image.width, height: image.height,
       }));
-      const data = this._native.getData?.();
-      if (data && typeof SDK.buildDefaultSpriteAtlas === 'function') {
-        const atlas = SDK.buildDefaultSpriteAtlas(data, this._theme, extras);
-        if (atlas) {
-          this._native.setSpriteAtlas(atlas);
-          return;
-        }
-      }
-      if (!extras.length) return;
-      this._native.setSpriteAtlas(SDK.buildSpriteAtlas(extras));
+      this._native.setSpriteAtlas(SDK.buildSpriteAtlas(items));
     }
 
     setTheme(theme) {
       this._theme = theme;
       this._native.setTheme(theme);
-      this._rebuildAtlas();
       this._applyOccupancy();
       return this;
     }
