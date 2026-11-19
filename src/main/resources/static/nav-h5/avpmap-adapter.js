@@ -95,6 +95,7 @@
         bearing: options.bearing,
         pitch: options.pitch,
         interactive: options.interactive !== false,
+        logo: options.logo,
       });
       ['dragstart', 'zoomstart', 'zoomend', 'rotatestart', 'pitchstart', 'move', 'moveend',
         'resize', 'render', 'click'].forEach((type) => {
