@@ -763,7 +763,8 @@ function ensureDestPinLayer(map, destination, spaceId) {
       source: 'nav-dest-pin-source',
       layout: {
         'icon-image': ['get', 'icon_id'],
-        'icon-size': 0.55,
+        // 对标 Android：位图 132px/3=44dp × iconSize 1.05 ≈ 46dp；此处位图 132px，故 46/132
+        'icon-size': 0.35,
         'icon-anchor': 'bottom',
         'icon-allow-overlap': true,
         'icon-ignore-placement': true,

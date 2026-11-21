@@ -24,6 +24,9 @@
     'poi-layer': 'poi',
   };
 
+  const ABOVE_MODEL_SYMBOL_LAYERS = new Set(['user-loc-heading-layer', 'nav-dest-pin-layer', 'nav-waypoint-pin-layer', 'knn-raw-label']);
+
+
   function featureCollection(data) {
     if (!data) return EMPTY_FC;
     if (data.type === 'FeatureCollection') return data;
@@ -339,6 +342,9 @@
             size: Number(value(layer.layout['icon-size'], null, 1)),
             headingProperty: Array.isArray(layer.layout['icon-rotate']) ? layer.layout['icon-rotate'][1] : undefined,
             mapAligned: layer.layout['icon-rotation-alignment'] === 'map',
+            anchor: layer.layout['icon-anchor'] === 'bottom' ? 'bottom' : 'center',
+            // 对标 Android：车标光束、终点/途径点牌压在墙体之上；方向箭头在路线上与路线同层（墙体之下）
+            aboveModels: ABOVE_MODEL_SYMBOL_LAYERS.has(layer.id),
             order,
           });
           dynamicIds.push(id);

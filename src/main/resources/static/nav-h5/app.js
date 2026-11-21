@@ -1483,7 +1483,8 @@ async function initMap() {
           MapLayers.highlightTargetSpace(map, SPACE_ID);
         }
         if (hasRoute && WAYPOINT) MapLayers.ensureWaypointPinLayer(map, WAYPOINT);
-        if (hasRoute && DEST_IS_FINAL && destination && SPACE_ID) {
+        // 对标 Android updateNavDestMarker：只要有目的地就画终点 P 牌（不看是否同层、有无车位号）
+        if (hasRoute && destination) {
           MapLayers.ensureDestPinLayer(map, destination, SPACE_ID);
         }
       }).catch((e) => {

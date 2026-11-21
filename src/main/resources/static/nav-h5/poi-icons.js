@@ -283,10 +283,11 @@ function registerDestPinIcon(map, label) {
     ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 44px sans-serif';
     ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('P', w / 2, 38);
-    const plateLabel = String(label || '').replace(/\D/g, '').slice(-4)
-      || String(label || '').slice(-4);
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText('P', w / 2, 53);
+    // 对标 Android：takeLastWhile{isDigit} 取末尾连续数字，没有再取末 4 位字符
+    const rawLabel = String(label || '');
+    const plateLabel = (rawLabel.match(/\d+$/) || [''])[0] || rawLabel.slice(-4);
     if (plateLabel) {
       ctx.fillStyle = blue;
       ctx.beginPath();
@@ -294,7 +295,7 @@ function registerDestPinIcon(map, label) {
       ctx.fill();
       ctx.font = `bold ${plateLabel.length <= 3 ? 28 : 23}px sans-serif`;
       ctx.fillStyle = '#ffffff';
-      ctx.fillText(plateLabel, w / 2, 102);
+      ctx.fillText(plateLabel, w / 2, 111);
     }
     addCanvasImage(map, iconId, canvas);
   } catch (e) {
