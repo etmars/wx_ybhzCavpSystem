@@ -323,6 +323,21 @@
           order,
         });
         dynamicIds.push(id);
+      } else if (layer.type === 'symbol' && layer.id === 'user-loc-heading-layer') {
+        // 朝向光束对标 Android 的 CONE 标记：贴地扇形，尖在定位点正中心，随俯仰变形；
+        // 半径 = 176px 位图 / 3 × iconSize ≈ 69.2px，#3E86EC 的 AA→00 渐变
+        const id = `layer:${layer.id}`;
+        this._native.setSource(id, {
+          type: 'marker',
+          shape: 'cone',
+          data,
+          color: '#3e86ec',
+          opacity: 0xAA / 255,
+          size: (176 / 3) * Number(value(layer.layout['icon-size'], null, 1.18)),
+          headingProperty: Array.isArray(layer.layout['icon-rotate']) ? layer.layout['icon-rotate'][1] : undefined,
+          order,
+        });
+        dynamicIds.push(id);
       } else if (layer.type === 'symbol') {
         const imageExpr = layer.layout['icon-image'];
         const groups = new global.Map();
@@ -360,7 +375,8 @@
               type: 'marker',
               data,
               color: cssColor(layer.paint['circle-stroke-color'], '#ffffff'),
-              size: (radius + stroke) * 2,
+              // 对标 MapLibre/Android：描边压在圆边上，外圈半径 = r + stroke/2
+              size: (radius + stroke / 2) * 2,
               order,
             });
             dynamicIds.push(strokeId);
@@ -370,7 +386,8 @@
             type: 'marker',
             data,
             color: cssColor(layer.paint['circle-color'], '#3e86ec'),
-            size: radius * 2,
+            // 有描边时内芯半径 = r - stroke/2（Android 外圈 9.5、内芯 6.5）
+            size: (stroke > 0 ? radius - stroke / 2 : radius) * 2,
             order: order + 0.1,
           });
           dynamicIds.push(id);
