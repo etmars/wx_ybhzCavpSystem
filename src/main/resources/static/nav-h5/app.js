@@ -135,7 +135,7 @@ async function readBodyWithHeader(response, onHeader) {
 function decodeInWorker(mapId, bytes, key) {
   return new Promise((resolve, reject) => {
     let worker;
-    try { worker = new Worker('./avp-decode-worker.js?v=20261121g'); }
+    try { worker = new Worker('./avp-decode-worker.js?v=20261121h'); }
     catch (e) { reject(e); return; }
     const timer = setTimeout(() => {
       worker.terminate();

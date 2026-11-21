@@ -218,7 +218,9 @@ function registerParkingLabelIcons(map, labelMap) {
 /** 对齐 createUserHeadingArrowBitmap — LinearGradient(#AA3E86EC → #003E86EC) + arcTo 扇形 */
 function registerUserHeadingIcon(map) {
   const id = 'user-loc-heading';
-  const size = 360;
+  // Android 的 360px 位图按设备密度(≈2.6)缩，扇形实际长约 80dp。
+  // 网页按 CSS 像素画，所以直接做成 144px 画布、半径 68，再乘 icon-size 1.18 ≈ 80px。
+  const size = 144;
   const canvas = document.createElement('canvas');
   canvas.width = size;
   canvas.height = size;
@@ -226,7 +228,7 @@ function registerUserHeadingIcon(map) {
   ctx.imageSmoothingEnabled = true;
   const cx = size / 2;
   const cy = size / 2;
-  const radius = 176;
+  const radius = 68;
   const halfAngleDeg = 20;
   const startAngleDeg = -90 - halfAngleDeg;
   const sweepDeg = halfAngleDeg * 2;

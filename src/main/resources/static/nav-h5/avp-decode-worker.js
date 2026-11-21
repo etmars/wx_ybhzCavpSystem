@@ -1,5 +1,5 @@
 /* 和 IPDSV 一样，把 avpmap 解密、解压、解析放到 Worker，主线程先把页面画出来。 */
-importScripts('./avpmap-web.iife.js?v=20261121h');
+importScripts('./avpmap-web.iife.js?v=20261121i');
 
 self.onmessage = function onDecode(event) {
   var body = event.data || {};

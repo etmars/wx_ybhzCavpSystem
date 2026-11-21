@@ -106,6 +106,8 @@
     async loadAvpMap(url, structuresBase, readOptions) {
       const data = await this._native.load(url, readOptions);
       this._installBakedLayers(data);
+      // 孪生页同样关掉地图里自带的 structure_sign：名牌改由电梯/楼梯实例按模型高度另画
+      this._native.setLayerVisible('structure_sign', false);
       this._loaded = true;
       this._applyOccupancy();
       this._syncAllLayers();
@@ -161,7 +163,8 @@
 
     async _fetchStructureMesh(type, base) {
       const name = `${encodeURIComponent(type)}.mesh`;
-      const urls = [];
+      // v2 是带贴图的 SM02（与孪生页同一份 GLB 烘出来的）；旧 SM01 只有顶点色，仅作兜底
+      const urls = [`./structures/${encodeURIComponent(type)}.v2.mesh`];
       if (base) urls.push(`${base}/${name}`);
       urls.push(`./structures/${name}`);
       let last = 'structure mesh missing';
