@@ -107,6 +107,7 @@
       const data = await this._native.load(url, readOptions);
       this._installBakedLayers(data);
       this._loaded = true;
+      this._applyOccupancy();
       this._syncAllLayers();
       this._fire('load');
       requestAnimationFrame(() => this._fire('idle'));
@@ -138,8 +139,11 @@
       return this;
     }
 
-    loadStructures(data, base) {
-      return this._loadStructures(data, base);
+    async loadStructures(data, base) {
+      await this._loadStructures(data, base);
+      // 标牌文字来自 data.structures，替换后图集必须补画 sign:xxx
+      this._rebuildAtlas();
+      this._native.requestRender();
     }
 
     async _loadStructures(data, base) {
@@ -246,8 +250,17 @@
       const before = beforeId ? this._layers.findIndex((item) => item.id === beforeId) : -1;
       if (before >= 0) this._layers.splice(before, 0, layer);
       else this._layers.push(layer);
-      this._syncAllLayers();
+      this._scheduleSyncAll();
       return this;
+    }
+    /** 连续 moveLayer 只重建一次，避免同一帧内把路线 GPU 缓冲重建十几遍 */
+    _scheduleSyncAll() {
+      if (this._syncAllQueued) return;
+      this._syncAllQueued = true;
+      Promise.resolve().then(() => {
+        this._syncAllQueued = false;
+        this._syncAllLayers();
+      });
     }
     getStyle() {
       return { layers: this._layers.map((layer) => ({ ...layer })) };
@@ -361,7 +374,10 @@
     addImage(id, image) {
       this._images.set(id, imageToCanvas(image));
       this._rebuildAtlas();
-      this._syncAllLayers();
+      // 新图只会影响 symbol 层；不要整套重建路线/圆点的 GPU 缓冲
+      this._layers.forEach((layer) => {
+        if (layer.type === 'symbol') this._syncLayer(layer);
+      });
       return this;
     }
     removeImage(id) {

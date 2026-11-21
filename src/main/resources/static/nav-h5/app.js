@@ -135,7 +135,7 @@ async function readBodyWithHeader(response, onHeader) {
 function decodeInWorker(mapId, bytes, key) {
   return new Promise((resolve, reject) => {
     let worker;
-    try { worker = new Worker('./avp-decode-worker.js?v=20261121f'); }
+    try { worker = new Worker('./avp-decode-worker.js?v=20261121g'); }
     catch (e) { reject(e); return; }
     const timer = setTimeout(() => {
       worker.terminate();
@@ -170,7 +170,8 @@ async function decodeMap(mapId) {
   const options = avpMapReadOptions(mapId);
   const known = rememberedKeyId(mapId);
   if (known) void options.keyProvider(known);
-  const response = await fetch(avpMapUrlForMap(mapId), { cache: 'no-store' });
+  // 服务端带 ETag；不再 no-store，命中缓存时只走 304 校验
+  const response = await fetch(avpMapUrlForMap(mapId));
   if (!response.ok) throw new Error(`failed to load avpmap: ${response.status}`);
   const bytes = await readBodyWithHeader(response, (header) => {
     const keyId = peekAvpeKeyId(header);
@@ -200,6 +201,8 @@ function loadCachedMap(mapId) {
   }
   return pending;
 }
+// 脚本一执行就开始下载 + 解码，不等 NavTuning / 路线请求
+loadCachedMap(MAP_ID).catch(() => {});
 const MAP_BEARING = parseFloat(Q.map_bearing) || 0;
 const ROUTE_API = Q.route_api || 'https://parkinglot.c-avp.com:9065/api/nav/route';
 const NAV_FLOW = Q.nav_flow || 'PARKING_ENTRY';
@@ -1269,32 +1272,20 @@ async function attachStructures(mapId, data) {
 async function stackRemainingFloors() {
   const extra = ROUTE_MAP_IDS.filter((id) => String(id) !== String(MAP_ID));
   if (!map || !extra.length || typeof map.setFloors !== 'function' || !window.AvpMapWeb.loadAvpMap) return;
-  const primary = map.getData && map.getData();
-  if (!primary) return;
-  const ids = [MAP_ID].concat(extra);
-  const z = await floorOffsets(ids);
-  const floors = [{ id: MAP_ID, input: primary, zOffset: z.get(MAP_ID) || 0 }];
+  // 只预取并解码其余楼层，切楼层时直接用缓存。
+  // 不再把多层叠在同一画面：上层平面盖住当前层，车位颜色/路线/蓝点高度也对不上。
   for (const id of extra) {
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 1500));
     try {
-      const input = await loadCachedMap(id);
-      await attachStructures(id, input);
-      floors.push({
-        id,
-        input,
-        zOffset: z.get(id) || 0,
-      });
+      await loadCachedMap(id);
     } catch (error) {
-      console.warn(`[avpmap] floor ${id} load failed`, error);
+      console.warn(`[avpmap] floor ${id} prefetch failed`, error);
     }
   }
-  if (floors.length < 2) return;
-  loadedFloors = floors;
-  await map.setFloors(floors, structureBaseForMap(MAP_ID));
 }
 
-function showStackedFloor(mapId) {
-  return loadedFloors.some((floor) => String(floor.id) === String(mapId));
+function showStackedFloor() {
+  return false;
 }
 
 async function loadParkingLabelIcons(mapInstance, mapId) {
@@ -1321,16 +1312,12 @@ async function switchVisibleMap(nextMapId) {
   if (!want || !map || want === String(activeMapId)) return;
   const prev = activeMapId;
   try {
-    const kept = showStackedFloor(want);
-    if (!kept) {
-      loadedFloors = [];
-      await map.loadAvpMap(
-        await loadCachedMap(want),
-        structureBaseForMap(want),
-        avpMapReadOptions(want),
-      );
-      await stackRemainingFloors();
-    }
+    await map.loadAvpMap(
+      await loadCachedMap(want),
+      structureBaseForMap(want),
+      avpMapReadOptions(want),
+    );
+    attachStructures(want, map.getData && map.getData());
     if (window.NavSpeedBumps) await NavSpeedBumps.render(map, API_BASE, want);
     activeMapId = want;
     try { sessionStorage.setItem(`navActiveMap:${SESSION_ID}`, want); } catch (e) { /* ignore */ }
@@ -1467,7 +1454,8 @@ async function initMap() {
       MapLayersUtil.registerUserHeadingIcon(map);
       MapLayers.restackPoiLayers(map);
       ensureExtraParkingMaps();
-      loadParkingLabelIcons(map).then(() => {
+      // 车位号已由 PNTS 文字直接画进图集，不再逐个下载 label-index / 注册几百张图
+      Promise.resolve().then(() => {
         applyJunction1005Visibility(map);
         MapLayers.updateParkingLabelSizeByZoom(map);
         if (hasRoute && (NAV_FLOW === 'PARKING_ENTRY' || IS_WALK_FLOW) && SPACE_ID) {
