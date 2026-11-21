@@ -219,7 +219,8 @@ const WAYPOINT = (Q.waypoint_lon && Q.waypoint_lat)
     index: parseInt(Q.waypoint_index || '1', 10) || 1,
   }
   : null;
-let ACTIVE_LEN = parseInt(Q.active_len || '0', 10) || 0;
+// 对标 Android：整条剩余路线一律画蓝（不按楼层/分段截断，无灰色预览）
+let ACTIVE_LEN = 0;
 const DEST_IS_FINAL = Q.dest_is_final === '1';
 /** 该停车场 OSM 地图数量；>1 才渲染 sType=1005 交界层。缺省/0 保持显示（兼容旧链接）。 */
 const LOT_MAP_COUNT = parseInt(Q.lot_map_count || '0', 10) || 0;
@@ -415,7 +416,7 @@ function applyAheadAsNavRoute(aheadAll, nextActiveLen, junction) {
   if (!aheadAll || aheadAll.length < 2) return false;
   const al = Math.max(0, Math.floor(Number(nextActiveLen) || 0));
   allRoutePoints = aheadAll.slice();
-  ACTIVE_LEN = (al > 1 && al < aheadAll.length) ? al : aheadAll.length;
+  ACTIVE_LEN = aheadAll.length;
   if (ACTIVE_LEN > 1 && ACTIVE_LEN < aheadAll.length) {
     routePoints = aheadAll.slice(0, ACTIVE_LEN);
     previewPoints = aheadAll.slice(ACTIVE_LEN - 1);
@@ -475,7 +476,7 @@ function applyAheadAsNavRoute(aheadAll, nextActiveLen, junction) {
     MapLayers.ensureUserPuckLayers(
       map,
       [renderPose.lon, renderPose.lat],
-      headingForMapIcon(renderPose.hdg),
+      beamBearingForIcon(0, renderPose.hdg),
     );
   }
   if (lastDisplay) {
@@ -833,7 +834,7 @@ function seedPuckAtRouteStart() {
     const lon = renderPose ? renderPose.lon : routePoints[0].longitude;
     const lat = renderPose ? renderPose.lat : routePoints[0].latitude;
     const hdg = renderPose ? renderPose.hdg : 0;
-    MapLayers.ensureUserPuckLayers(map, [lon, lat], headingForMapIcon(hdg));
+    MapLayers.ensureUserPuckLayers(map, [lon, lat], beamBearingForIcon(renderPose ? renderPose.prog : 0, hdg));
     camDiag('seedPuck ENSURE',
       `reason=${navigating ? 'navigating' : 'prog>0.5'} at=${fmtLL({ latitude: lat, longitude: lon })}`);
     return;
@@ -844,7 +845,7 @@ function seedPuckAtRouteStart() {
     ? window.NavGeo.bearingDegrees(routePoints[0], routePoints[1])
     : 0;
   const brTn = ((brMap + MAP_BEARING) % 360 + 360) % 360;
-  MapLayers.ensureUserPuckLayers(map, [start.longitude, start.latitude], headingForMapIcon(brTn));
+  MapLayers.ensureUserPuckLayers(map, [start.longitude, start.latitude], beamBearingForIcon(0, brTn));
   cancelPoseTween();
   renderPose = {
     lon: start.longitude,
@@ -868,22 +869,42 @@ function headingForMapIcon(trueNorthHeading) {
   return (((trueNorthHeading || 0) - MAP_BEARING) % 360 + 360) % 360;
 }
 
+/** 对标 Android lookahead：MainActivity.NAV_CAMERA_ROUTE_LOOKAHEAD_M = 10 */
+const BEAM_ROUTE_LOOKAHEAD_M = 10;
+
+/**
+ * 光束方向（对标 Android userBeamBearingDeg）：脚下路径前向弦，不读 IMU/融合朝向。
+ * 路线点与图层同处图纸 CRS，弦向可直接作为 icon-rotate。
+ * 无路线时才退回传入的朝向。
+ */
+function beamBearingForIcon(prog, fallbackTrueNorth) {
+  if (routePoints.length >= 2 && routeMetrics && routeMetrics.total > 0) {
+    const p = Number.isFinite(prog) && prog >= 0 ? prog : 0;
+    const br = window.NavGeo.forwardChordBearingDeg(routePoints, p, BEAM_ROUTE_LOOKAHEAD_M, routeMetrics);
+    if (Number.isFinite(br)) return ((br % 360) + 360) % 360;
+  }
+  return headingForMapIcon(fallbackTrueNorth);
+}
+
 function updateUserPuck(loc, bearing) {
   if (!map || !loc) return;
+  const prog = renderPose ? Number(renderPose.prog) : 0;
+  const beam = beamBearingForIcon(prog, bearing);
   if (!map.getSource('user-loc-source')) {
     MapLayers.ensureUserPuckLayers(
       map,
       [loc.longitude, loc.latitude],
-      headingForMapIcon(bearing),
+      beam,
     );
     return;
   }
   map.getSource('user-loc-source').setData({
     type: 'Feature',
     geometry: { type: 'Point', coordinates: [loc.longitude, loc.latitude] },
-    properties: { bearing: headingForMapIcon(bearing) },
+    properties: { bearing: beam },
   });
 }
+
 
 function cancelPoseTween() {
   if (poseRaf) {

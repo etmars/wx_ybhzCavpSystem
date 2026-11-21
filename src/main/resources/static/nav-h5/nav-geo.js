@@ -138,7 +138,51 @@
     return routeSegmentBearingAtDistance(polyline, ahead, m);
   }
 
-  /** 对齐 Android MbtilesMapMeta.cameraBearingDeg：图纸北系方位 → MapLibre 真北 bearing */
+  /** 对齐 Android NavRouteBearing.segmentBearingSkippingShort：短段向后/向前找足够长的段。 */
+  function segmentBearingSkippingShort(polyline, cumulative, targetMeters, minSegM) {
+    const n = polyline.length;
+    if (n < 2 || !cumulative || cumulative.length !== n) return 0;
+    const total = cumulative[n - 1];
+    const clamped = Math.max(0, Math.min(targetMeters, total));
+    let idx = n - 2;
+    for (let i = 0; i < n - 1; i += 1) {
+      if (clamped <= cumulative[i + 1] + 1e-6) { idx = i; break; }
+    }
+    const segLen = (i) => Math.max(0, (cumulative[i + 1] || 0) - (cumulative[i] || 0));
+    let i = idx;
+    while (i >= 0 && segLen(i) < minSegM) i -= 1;
+    if (i < 0) {
+      i = idx;
+      while (i < n - 1 && segLen(i) < minSegM) i += 1;
+    }
+    i = Math.max(0, Math.min(n - 2, i));
+    return bearingDegrees(polyline[i], polyline[i + 1]);
+  }
+
+  /**
+   * 对齐 Android NavRouteBearing.forwardChordBearingDeg：
+   * 从 progress 到前方 lookahead 米的弦向。光束 = 脚下路径方向，不读 IMU。
+   */
+  function forwardChordBearingDeg(polyline, progressMeters, lookaheadM, metrics) {
+    const MIN_SEG_M = 0.8;
+    if (!polyline || polyline.length < 2) return 0;
+    const m = metrics || buildRouteMetrics(polyline);
+    const cum = m.cumulative;
+    const total = m.total;
+    if (!(total > 0)) return bearingDegrees(polyline[0], polyline[1]);
+    const fromM = Math.max(0, Math.min(progressMeters || 0, total));
+    const span = Math.max(lookaheadM, MIN_SEG_M);
+    let toM = Math.min(fromM + span, total);
+    if (toM - fromM < MIN_SEG_M) toM = total;
+    const a = pointAtRouteDistance(polyline, fromM, m) || polyline[0];
+    const b = pointAtRouteDistance(polyline, toM, m) || polyline[polyline.length - 1];
+    if (distanceMeters(a, b) < MIN_SEG_M) {
+      return segmentBearingSkippingShort(polyline, cum, fromM, 2.0);
+    }
+    return bearingDegrees(a, b);
+  }
+
+  /** 图纸北系 → 真北（罗盘）。MapLibre 相机应直接用 route 前向角，勿叠加 mapN。 */
   function cameraBearingFromRouteDeg(routeMapRelDeg, mapNorthBearingDeg) {
     return ((routeMapRelDeg + (mapNorthBearingDeg || 0)) + 360) % 360;
   }
@@ -180,6 +224,7 @@
     pointAtRouteDistance,
     routeSegmentBearingAtDistance,
     routeForwardBearingAtProgress,
+    forwardChordBearingDeg,
     cameraBearingFromRouteDeg,
     elevationAtRouteDistance,
   };
