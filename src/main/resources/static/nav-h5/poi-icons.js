@@ -226,7 +226,7 @@ function registerUserHeadingIcon(map) {
   ctx.imageSmoothingEnabled = true;
   const cx = size / 2;
   const cy = size / 2;
-  const radius = 59; // 原 176 的 1/3
+  const radius = 176;
   const halfAngleDeg = 20;
   const startAngleDeg = -90 - halfAngleDeg;
   const sweepDeg = halfAngleDeg * 2;

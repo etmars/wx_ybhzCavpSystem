@@ -1041,6 +1041,79 @@ function onDisplayFromHash(forceCamera) {
   applyDisplay();
 }
 
+function floorNumber(raw) {
+  const text = String(raw ?? '').trim().toUpperCase();
+  const basement = text.match(/^B(\d+)$/);
+  if (basement) return -Number(basement[1]);
+  const level = Number(text.replace(/F$/, ''));
+  return Number.isFinite(level) ? level : null;
+}
+
+async function floorOffsets(ids) {
+  const maps = [];
+  if (PARKING_LOT_ID) {
+    try {
+      const res = await fetch(`${API_BASE}/api/maps?parking_lot_id=${encodeURIComponent(PARKING_LOT_ID)}`);
+      if (res.ok) {
+        const body = await res.json();
+        const arr = Array.isArray(body) ? body : (body && body.data);
+        if (Array.isArray(arr)) maps.push(...arr);
+      }
+    } catch (e) { /* 没有楼层表时各层按 0 高度叠在一起 */ }
+  }
+  const meta = new Map();
+  maps.forEach((item) => {
+    const id = String(item.map_id || item.id || item.mapId || '').trim();
+    if (id) meta.set(id, item);
+  });
+  const keys = ids.map((id) => {
+    const item = meta.get(id) || {};
+    return floorNumber(item.floor_code ?? item.floorCode ?? item.floor);
+  }).filter((key) => key != null);
+  const ranks = [...new Set(keys)].sort((a, b) => a - b);
+  const z = new Map();
+  ids.forEach((id) => {
+    const item = meta.get(id) || {};
+    const key = floorNumber(item.floor_code ?? item.floorCode ?? item.floor);
+    z.set(id, key == null ? 0 : Math.max(0, ranks.indexOf(key)) * 50);
+  });
+  return z;
+}
+
+let loadedFloors = [];
+
+async function stackRemainingFloors() {
+  if (!map || MAP_IDS.length < 2 || typeof map.setFloors !== 'function' || !window.AvpMapWeb.loadAvpMap) return;
+  const primary = map.getData && map.getData();
+  if (!primary) return;
+  const z = await floorOffsets(MAP_IDS);
+  const floors = [{ id: MAP_ID, input: primary, zOffset: z.get(MAP_ID) || 0 }];
+  for (const id of MAP_IDS) {
+    if (String(id) === String(MAP_ID)) continue;
+    try {
+      floors.push({
+        id,
+        input: await window.AvpMapWeb.loadAvpMap(avpMapUrlForMap(id), avpMapReadOptions(id)),
+        zOffset: z.get(id) || 0,
+      });
+    } catch (error) {
+      console.warn(`[avpmap] floor ${id} load failed`, error);
+    }
+  }
+  if (floors.length < 2) return;
+  loadedFloors = floors;
+  await map.setFloors(floors, structureBaseForMap(MAP_ID));
+}
+
+async function showStackedFloor(mapId) {
+  const hit = loadedFloors.find((floor) => String(floor.id) === String(mapId));
+  if (!hit) return false;
+  const ordered = [hit].concat(loadedFloors.filter((floor) => floor !== hit));
+  loadedFloors = ordered;
+  await map.setFloors(ordered, structureBaseForMap(mapId));
+  return true;
+}
+
 async function loadParkingLabelIcons(mapInstance, mapId) {
   const mid = mapId || MAP_ID;
   try {
@@ -1065,11 +1138,15 @@ async function switchVisibleMap(nextMapId) {
   if (!want || !map || want === String(activeMapId)) return;
   const prev = activeMapId;
   try {
-    await map.loadAvpMap(
-      avpMapUrlForMap(want),
-      structureBaseForMap(want),
-      avpMapReadOptions(want),
-    );
+    const kept = await showStackedFloor(want);
+    if (!kept) {
+      await map.loadAvpMap(
+        avpMapUrlForMap(want),
+        structureBaseForMap(want),
+        avpMapReadOptions(want),
+      );
+      await stackRemainingFloors();
+    }
     if (window.NavSpeedBumps) await NavSpeedBumps.render(map, API_BASE, want);
     activeMapId = want;
     try { sessionStorage.setItem(`navActiveMap:${SESSION_ID}`, want); } catch (e) { /* ignore */ }
@@ -1260,6 +1337,7 @@ async function initMap() {
     structureBaseForMap(MAP_ID),
     avpMapReadOptions(MAP_ID),
   );
+  await stackRemainingFloors();
   if (window.NavSpeedBumps) await NavSpeedBumps.render(map, API_BASE, MAP_ID);
   startMapChrome();
   window.__map = map;

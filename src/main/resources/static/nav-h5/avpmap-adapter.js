@@ -115,18 +115,53 @@
       return data;
     }
 
+    async setFloors(floors, structuresBase) {
+      await this._native.setFloors(floors);
+      const structures = [];
+      const seen = new Set();
+      (floors || []).forEach((floor) => {
+        const list = floor && floor.input && floor.input.structures;
+        if (!Array.isArray(list)) return;
+        list.forEach((item) => {
+          const type = String(item && item.type || '').trim();
+          if (!type || seen.has(type)) return;
+          seen.add(type);
+          structures.push(item);
+        });
+      });
+      await this._loadStructures({ structures }, structuresBase);
+      this._loaded = true;
+      this._rebuildAtlas();
+      this._applyOccupancy();
+      this._syncAllLayers();
+      return this;
+    }
+
     async _loadStructures(data, base) {
-      if (!base || !data || !Array.isArray(data.structures)) return;
+      if (!data || !Array.isArray(data.structures)) return;
       const types = [...new Set(data.structures.map((item) => String(item.type || '').trim()).filter(Boolean))];
       await Promise.all(types.map(async (type) => {
         try {
-          const response = await fetch(`${base}/${encodeURIComponent(type)}.mesh`);
-          if (!response.ok) throw new Error(`HTTP ${response.status}`);
-          this._native.setStructureMesh(type, SDK.readStructureMesh(await response.arrayBuffer()));
+          const buffer = await this._fetchStructureMesh(type, base);
+          this._native.setStructureMesh(type, SDK.readStructureMesh(buffer));
         } catch (error) {
           console.warn(`[avpmap] structure ${type} load failed`, error);
         }
       }));
+    }
+
+    async _fetchStructureMesh(type, base) {
+      const name = `${encodeURIComponent(type)}.mesh`;
+      const urls = [];
+      if (base) urls.push(`${base}/${name}`);
+      urls.push(`./structures/${name}`);
+      let last = 'structure mesh missing';
+      for (const url of urls) {
+        const response = await fetch(url);
+        if (response.ok) return response.arrayBuffer();
+        last = `HTTP ${response.status} ${url}`;
+      }
+      throw new Error(last);
     }
 
     _installBakedLayers(data) {
