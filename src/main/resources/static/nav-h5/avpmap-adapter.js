@@ -137,6 +137,10 @@
       return this;
     }
 
+    loadStructures(data, base) {
+      return this._loadStructures(data, base);
+    }
+
     async _loadStructures(data, base) {
       if (!data || !Array.isArray(data.structures)) return;
       const types = [...new Set(data.structures.map((item) => String(item.type || '').trim()).filter(Boolean))];

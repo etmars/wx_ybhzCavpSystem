@@ -1083,6 +1083,50 @@ async function floorOffsets(ids) {
 
 let loadedFloors = [];
 
+function toLocalMeters(originLon, originLat, lng, lat) {
+  const deg = Math.PI / 180;
+  const radius = 6378137;
+  const cos = Math.cos(originLat * deg);
+  return [(lng - originLon) * deg * radius * cos, (lat - originLat) * deg * radius];
+}
+
+async function fetchStructurePoints(mapId) {
+  const res = await fetch(`${API_BASE}/api/maps/${encodeURIComponent(mapId)}/special-points`);
+  if (!res.ok) return [];
+  const body = await res.json();
+  const rows = Array.isArray(body && body.data) ? body.data : [];
+  const points = [];
+  rows.forEach((row) => {
+    const type = String(row && row.pointType || '');
+    if (type !== 'elevator' && type !== 'stairs') return;
+    const display = row.display || {};
+    const lng = Number(display.x);
+    const lat = Number(display.y);
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
+    const name = String(row.displayName || '').trim() || (type === 'elevator' ? '电梯' : '楼梯');
+    points.push({ type, lng, lat, name });
+  });
+  return points;
+}
+
+async function attachStructures(mapId, data) {
+  if (!map || !data) return;
+  try {
+    const points = await fetchStructurePoints(mapId);
+    if (points.length) {
+      data.structures = points.map((point) => {
+        const xy = toLocalMeters(data.originLon, data.originLat, point.lng, point.lat);
+        return { type: point.type, x: xy[0], y: xy[1], name: point.name };
+      });
+    }
+  } catch (error) {
+    console.warn(`[avpmap] special-points ${mapId} failed`, error);
+  }
+  if (typeof map.loadStructures === 'function') {
+    await map.loadStructures(data, structureBaseForMap(mapId));
+  }
+}
+
 async function stackRemainingFloors() {
   const extra = ROUTE_MAP_IDS.filter((id) => String(id) !== String(MAP_ID));
   if (!map || !extra.length || typeof map.setFloors !== 'function' || !window.AvpMapWeb.loadAvpMap) return;
@@ -1094,9 +1138,11 @@ async function stackRemainingFloors() {
   for (const id of extra) {
     await new Promise((resolve) => setTimeout(resolve, 0));
     try {
+      const input = await window.AvpMapWeb.loadAvpMap(avpMapUrlForMap(id), avpMapReadOptions(id));
+      await attachStructures(id, input);
       floors.push({
         id,
-        input: await window.AvpMapWeb.loadAvpMap(avpMapUrlForMap(id), avpMapReadOptions(id)),
+        input,
         zOffset: z.get(id) || 0,
       });
     } catch (error) {
@@ -1336,6 +1382,7 @@ async function initMap() {
     structureBaseForMap(MAP_ID),
     avpMapReadOptions(MAP_ID),
   );
+  await attachStructures(MAP_ID, map.getData && map.getData());
   if (window.NavSpeedBumps) await NavSpeedBumps.render(map, API_BASE, MAP_ID);
   startMapChrome();
   requestAnimationFrame(() => { stackRemainingFloors(); });
