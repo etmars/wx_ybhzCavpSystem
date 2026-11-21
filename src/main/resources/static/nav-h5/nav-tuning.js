@@ -8,8 +8,8 @@ window.NavTuning = {
   WALK_PITCH: 20,
   NAV_CAMERA_EASE_MS: 600,
   NAV_PADDING_BOTTOM: 180,
-  /** 蓝点固定落在屏幕纵向该比例处：0.5 居中，0.68 约在下方 1/3 区域 */
-  NAV_PUCK_SCREEN_RATIO: 0.68,
+  /** 蓝点固定落在屏幕纵向该比例处：0.5 居中，0.71 即距底边 29% */
+  NAV_PUCK_SCREEN_RATIO: 0.71,
   NAV_CAMERA_ROUTE_LOOKAHEAD_M: 8,
   NAV_CAMERA_BEARING_ALPHA: 0.12,
   NAV_CAMERA_MIN_MOVE_M: 1.5,

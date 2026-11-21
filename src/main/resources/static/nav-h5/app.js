@@ -672,7 +672,7 @@ function navCameraPadding() {
   // 容器还没布局时不要把 padding 清零，否则蓝点会先跳回屏幕中央
   if (!h) return (map && map.getPadding) ? map.getPadding() : { top: 0, bottom: 0, left: 0, right: 0 };
   if (h === cachedPaddingHeight && cachedPadding) return cachedPadding;
-  const ratio = Math.min(0.9, Math.max(0.5, T.NAV_PUCK_SCREEN_RATIO || 0.68));
+  const ratio = Math.min(0.9, Math.max(0.5, T.NAV_PUCK_SCREEN_RATIO || 0.71));
   cachedPaddingHeight = h;
   cachedPadding = {
     top: Math.max(0, Math.round((2 * ratio - 1) * h)),
