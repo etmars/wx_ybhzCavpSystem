@@ -209,6 +209,8 @@ const NAV_FLOW = Q.nav_flow || 'PARKING_ENTRY';
 const AUTO_START = Q.auto_start === '1';
 
 const SPACE_ID = Q.space_id || '';
+// 要上色/高亮的车位：泊出时 space_id 是出口名，起点车位走 start_space_id（对标 Android targetSpaceId）
+const TARGET_SPACE_ID = Q.start_space_id || SPACE_ID;
 const SESSION_ID = Q.session_id || 'default';
 const SEED_TEST_ROUTE = Q.seed_test_route === '1';
 const WAYPOINT = (Q.waypoint_lon && Q.waypoint_lat)
@@ -1092,7 +1094,7 @@ function refreshMapChrome() {
   const theme = currentThemeName();
   mapThemeName = theme;
   MapTheme.applyTheme(map, theme, MAP_IDS, MAP_ID);
-  MapTheme.applyOccupancy(map, theme, occupancyLists, SPACE_ID, MAP_IDS, MAP_ID);
+  MapTheme.applyOccupancy(map, theme, occupancyLists, TARGET_SPACE_ID, MAP_IDS, MAP_ID);
 }
 
 async function pollSpotOccupancy() {
@@ -1105,7 +1107,7 @@ async function pollSpotOccupancy() {
     const rows = body && body.data;
     occupancyLists = ParkingSpotOccupancy.listsFromRows(Array.isArray(rows) ? rows : []);
     if (map) {
-      MapTheme.applyOccupancy(map, mapThemeName || currentThemeName(), occupancyLists, SPACE_ID, MAP_IDS, MAP_ID);
+      MapTheme.applyOccupancy(map, mapThemeName || currentThemeName(), occupancyLists, TARGET_SPACE_ID, MAP_IDS, MAP_ID);
     }
   } catch (e) { /* 着色失败不影响导航 */ }
 }
@@ -1343,8 +1345,8 @@ async function switchVisibleMap(nextMapId) {
     activeMapId = want;
     try { sessionStorage.setItem(`navActiveMap:${SESSION_ID}`, want); } catch (e) { /* ignore */ }
     refreshMapChrome();
-    if (SPACE_ID && MapLayers.highlightTargetSpace) {
-      MapLayers.highlightTargetSpace(map, SPACE_ID);
+    if (TARGET_SPACE_ID && MapLayers.highlightTargetSpace) {
+      MapLayers.highlightTargetSpace(map, TARGET_SPACE_ID);
     }
     if (routePoints.length >= 2) {
       MapLayers.ensureNavRouteLayers(map, routePoints, { walk: IS_WALK_FLOW });
@@ -1479,8 +1481,9 @@ async function initMap() {
       Promise.resolve().then(() => {
         applyJunction1005Visibility(map);
         MapLayers.updateParkingLabelSizeByZoom(map);
-        if (hasRoute && (NAV_FLOW === 'PARKING_ENTRY' || IS_WALK_FLOW) && SPACE_ID) {
-          MapLayers.highlightTargetSpace(map, SPACE_ID);
+        // Android 不分流程：只要有车位号就高亮（泊入的目标车位、泊出的起点车位）
+        if (hasRoute && TARGET_SPACE_ID) {
+          MapLayers.highlightTargetSpace(map, TARGET_SPACE_ID);
         }
         if (hasRoute && WAYPOINT) MapLayers.ensureWaypointPinLayer(map, WAYPOINT);
         // 对标 Android updateNavDestMarker：只要有目的地就画终点 P 牌（不看是否同层、有无车位号）
