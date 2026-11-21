@@ -106,12 +106,13 @@
     async loadAvpMap(url, structuresBase, readOptions) {
       const data = await this._native.load(url, readOptions);
       this._installBakedLayers(data);
-      await this._loadStructures(data, structuresBase);
       this._loaded = true;
-      this._rebuildAtlas();
       this._syncAllLayers();
       this._fire('load');
       requestAnimationFrame(() => this._fire('idle'));
+      this._loadStructures(data, structuresBase).catch((error) => {
+        console.warn('[avpmap] structure load failed', error);
+      });
       return data;
     }
 
@@ -369,23 +370,32 @@
       return this;
     }
     _rebuildAtlas() {
-      try {
+      if (this._atlasQueued) return;
+      this._atlasQueued = true;
+      requestAnimationFrame(() => {
+        this._atlasQueued = false;
         const extras = [...this._images].map(([key, image]) => ({
           key, image, width: image.width, height: image.height,
         }));
-        const data = this._native.getData?.();
-        if (data && typeof SDK.buildDefaultSpriteAtlas === 'function') {
-          const atlas = SDK.buildDefaultSpriteAtlas(data, this._theme, extras);
-          if (atlas) {
-            this._native.setSpriteAtlas(atlas);
+        try {
+          if (typeof this._native.scheduleAtlas === 'function') {
+            this._native.scheduleAtlas(extras);
             return;
           }
+          const data = this._native.getData?.();
+          if (data && typeof SDK.buildDefaultSpriteAtlas === 'function') {
+            const atlas = SDK.buildDefaultSpriteAtlas(data, this._theme, extras);
+            if (atlas) {
+              this._native.setSpriteAtlas(atlas);
+              return;
+            }
+          }
+          if (!extras.length) return;
+          this._native.setSpriteAtlas(SDK.buildSpriteAtlas(extras));
+        } catch (error) {
+          console.warn('[avpmap] sprite atlas rebuild failed', error);
         }
-        if (!extras.length) return;
-        this._native.setSpriteAtlas(SDK.buildSpriteAtlas(extras));
-      } catch (error) {
-        console.warn('[avpmap] sprite atlas rebuild failed', error);
-      }
+      });
     }
 
     setTheme(theme) {

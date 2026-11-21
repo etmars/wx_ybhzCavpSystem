@@ -61,6 +61,145 @@ function avpMapReadOptions(mapId) {
 function structureBaseForMap(mapId) {
   return `${API_BASE}/api/maps/${encodeURIComponent(mapId)}/structures`;
 }
+const parsedMapCache = new Map();
+
+function peekAvpeKeyId(bytes) {
+  if (!bytes || bytes.byteLength < 8) return null;
+  if (String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3]) !== 'AVPE') return null;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (view.getUint8(4) !== 1) return null;
+  const keyId = view.getUint16(6, true);
+  return keyId > 0 ? keyId : null;
+}
+
+function rememberedKeyId(mapId) {
+  try {
+    const n = Number(sessionStorage.getItem(`nav.avpmap.key.${mapId}`));
+    return Number.isInteger(n) && n > 0 ? n : null;
+  } catch (e) { return null; }
+}
+
+function rememberKeyId(mapId, keyId) {
+  try { sessionStorage.setItem(`nav.avpmap.key.${mapId}`, String(keyId)); } catch (e) { /* ignore */ }
+}
+
+function concatBytes(parts, length) {
+  const header = new Uint8Array(length);
+  let offset = 0;
+  parts.forEach((part) => {
+    const n = Math.min(part.byteLength, length - offset);
+    if (n <= 0) return;
+    header.set(part.subarray(0, n), offset);
+    offset += n;
+  });
+  return header;
+}
+
+async function readBodyWithHeader(response, onHeader) {
+  const reader = response.body && response.body.getReader ? response.body.getReader() : null;
+  if (!reader) {
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    onHeader(bytes.subarray(0, Math.min(8, bytes.byteLength)));
+    return bytes;
+  }
+  const chunks = [];
+  let total = 0;
+  const headerParts = [];
+  let headerLen = 0;
+  let peeked = false;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value || !value.byteLength) continue;
+    chunks.push(value);
+    total += value.byteLength;
+    if (!peeked) {
+      headerParts.push(value);
+      headerLen += value.byteLength;
+      if (headerLen >= 8) {
+        peeked = true;
+        onHeader(concatBytes(headerParts, 8));
+      }
+    }
+  }
+  if (!peeked) onHeader(concatBytes(headerParts, headerLen));
+  const out = new Uint8Array(total);
+  let offset = 0;
+  chunks.forEach((chunk) => {
+    out.set(chunk, offset);
+    offset += chunk.byteLength;
+  });
+  return out;
+}
+
+function decodeInWorker(mapId, bytes, key) {
+  return new Promise((resolve, reject) => {
+    let worker;
+    try { worker = new Worker('./avp-decode-worker.js?v=20261121f'); }
+    catch (e) { reject(e); return; }
+    const timer = setTimeout(() => {
+      worker.terminate();
+      reject(new Error('decode worker timeout'));
+    }, 20000);
+    worker.onmessage = (event) => {
+      const body = event.data || {};
+      if (body.error) {
+        clearTimeout(timer);
+        worker.terminate();
+        reject(new Error(body.error));
+      } else if (body.data) {
+        clearTimeout(timer);
+        worker.terminate();
+        resolve(body.data);
+      }
+    };
+    worker.onerror = () => {
+      clearTimeout(timer);
+      worker.terminate();
+      reject(new Error('decode worker failed'));
+    };
+    const copy = bytes.slice();
+    const keyCopy = key ? key.slice() : null;
+    const transfer = [copy.buffer];
+    if (keyCopy) transfer.push(keyCopy.buffer);
+    worker.postMessage({ mapId, bytes: copy, key: keyCopy }, transfer);
+  });
+}
+
+async function decodeMap(mapId) {
+  const options = avpMapReadOptions(mapId);
+  const known = rememberedKeyId(mapId);
+  if (known) void options.keyProvider(known);
+  const response = await fetch(avpMapUrlForMap(mapId), { cache: 'no-store' });
+  if (!response.ok) throw new Error(`failed to load avpmap: ${response.status}`);
+  const bytes = await readBodyWithHeader(response, (header) => {
+    const keyId = peekAvpeKeyId(header);
+    if (keyId) {
+      rememberKeyId(mapId, keyId);
+      void options.keyProvider(keyId);
+    }
+  });
+  const keyId = peekAvpeKeyId(bytes);
+  const key = keyId ? await options.keyProvider(keyId) : null;
+  try {
+    return await decodeInWorker(mapId, bytes, key);
+  } catch (error) {
+    console.warn('[avpmap] worker decode fallback', error);
+    return window.AvpMapWeb.readAvpMap(bytes, options);
+  }
+}
+
+function loadCachedMap(mapId) {
+  let pending = parsedMapCache.get(mapId);
+  if (!pending) {
+    pending = decodeMap(mapId).catch((error) => {
+      parsedMapCache.delete(mapId);
+      throw error;
+    });
+    parsedMapCache.set(mapId, pending);
+  }
+  return pending;
+}
 const MAP_BEARING = parseFloat(Q.map_bearing) || 0;
 const ROUTE_API = Q.route_api || 'https://parkinglot.c-avp.com:9065/api/nav/route';
 const NAV_FLOW = Q.nav_flow || 'PARKING_ENTRY';
@@ -1138,7 +1277,7 @@ async function stackRemainingFloors() {
   for (const id of extra) {
     await new Promise((resolve) => setTimeout(resolve, 0));
     try {
-      const input = await window.AvpMapWeb.loadAvpMap(avpMapUrlForMap(id), avpMapReadOptions(id));
+      const input = await loadCachedMap(id);
       await attachStructures(id, input);
       floors.push({
         id,
@@ -1186,7 +1325,7 @@ async function switchVisibleMap(nextMapId) {
     if (!kept) {
       loadedFloors = [];
       await map.loadAvpMap(
-        avpMapUrlForMap(want),
+        await loadCachedMap(want),
         structureBaseForMap(want),
         avpMapReadOptions(want),
       );
@@ -1378,11 +1517,11 @@ async function initMap() {
   });
 
   await map.loadAvpMap(
-    avpMapUrlForMap(MAP_ID),
+    await loadCachedMap(MAP_ID),
     structureBaseForMap(MAP_ID),
     avpMapReadOptions(MAP_ID),
   );
-  await attachStructures(MAP_ID, map.getData && map.getData());
+  attachStructures(MAP_ID, map.getData && map.getData());
   if (window.NavSpeedBumps) await NavSpeedBumps.render(map, API_BASE, MAP_ID);
   startMapChrome();
   requestAnimationFrame(() => { stackRemainingFloors(); });
