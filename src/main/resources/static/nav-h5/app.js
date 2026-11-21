@@ -27,6 +27,7 @@ const MAP_IDS = (() => {
   });
   return ids;
 })();
+const ROUTE_MAP_IDS = String(Q.route_map_ids || '').split(',').map((s) => s.trim()).filter(Boolean);
 function avpMapUrlForMap(mapId) {
   return `${API_BASE}/api/maps/${encodeURIComponent(mapId)}/avpmap`;
 }
@@ -1083,13 +1084,15 @@ async function floorOffsets(ids) {
 let loadedFloors = [];
 
 async function stackRemainingFloors() {
-  if (!map || MAP_IDS.length < 2 || typeof map.setFloors !== 'function' || !window.AvpMapWeb.loadAvpMap) return;
+  const extra = ROUTE_MAP_IDS.filter((id) => String(id) !== String(MAP_ID));
+  if (!map || !extra.length || typeof map.setFloors !== 'function' || !window.AvpMapWeb.loadAvpMap) return;
   const primary = map.getData && map.getData();
   if (!primary) return;
-  const z = await floorOffsets(MAP_IDS);
+  const ids = [MAP_ID].concat(extra);
+  const z = await floorOffsets(ids);
   const floors = [{ id: MAP_ID, input: primary, zOffset: z.get(MAP_ID) || 0 }];
-  for (const id of MAP_IDS) {
-    if (String(id) === String(MAP_ID)) continue;
+  for (const id of extra) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
     try {
       floors.push({
         id,
@@ -1105,13 +1108,8 @@ async function stackRemainingFloors() {
   await map.setFloors(floors, structureBaseForMap(MAP_ID));
 }
 
-async function showStackedFloor(mapId) {
-  const hit = loadedFloors.find((floor) => String(floor.id) === String(mapId));
-  if (!hit) return false;
-  const ordered = [hit].concat(loadedFloors.filter((floor) => floor !== hit));
-  loadedFloors = ordered;
-  await map.setFloors(ordered, structureBaseForMap(mapId));
-  return true;
+function showStackedFloor(mapId) {
+  return loadedFloors.some((floor) => String(floor.id) === String(mapId));
 }
 
 async function loadParkingLabelIcons(mapInstance, mapId) {
@@ -1138,8 +1136,9 @@ async function switchVisibleMap(nextMapId) {
   if (!want || !map || want === String(activeMapId)) return;
   const prev = activeMapId;
   try {
-    const kept = await showStackedFloor(want);
+    const kept = showStackedFloor(want);
     if (!kept) {
+      loadedFloors = [];
       await map.loadAvpMap(
         avpMapUrlForMap(want),
         structureBaseForMap(want),
@@ -1337,9 +1336,9 @@ async function initMap() {
     structureBaseForMap(MAP_ID),
     avpMapReadOptions(MAP_ID),
   );
-  await stackRemainingFloors();
   if (window.NavSpeedBumps) await NavSpeedBumps.render(map, API_BASE, MAP_ID);
   startMapChrome();
+  requestAnimationFrame(() => { stackRemainingFloors(); });
   window.__map = map;
 }
 
